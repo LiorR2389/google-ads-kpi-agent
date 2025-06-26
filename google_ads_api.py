@@ -32,14 +32,14 @@ def load_campaign_data():
     # Normalize and rename
     df.columns = [col.strip().lower() for col in df.columns]
     rename_map = {
-        'ad group name': 'Campaign',
+        'campaign name': 'Campaign',
         'clicks': 'clicks',
         'average cost': 'spend'
     }
     df = df.rename(columns=rename_map)
 
-    # Keep only needed columns
     df = df[['Campaign', 'clicks', 'spend']]
+
     return df
 
 def add_kpis(df):
