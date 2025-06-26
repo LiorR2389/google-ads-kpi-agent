@@ -2,3 +2,4 @@ pandas
 matplotlib
 jinja2
 weasyprint[visual]
+flask
