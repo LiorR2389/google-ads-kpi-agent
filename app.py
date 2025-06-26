@@ -1,4 +1,4 @@
-from flask import Flask, render_template, send_file
+from flask import Flask, request 
 from google_ads_api import fetch_sheet_data
 import os
 
