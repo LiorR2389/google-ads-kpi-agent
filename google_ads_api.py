@@ -3,24 +3,33 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import datetime
 import gspread
+import base64
+import json
 from oauth2client.service_account import ServiceAccountCredentials
 
 DATA_DIR = "data"
 SHEET_ID = "1rBjY6_AeDIG-1UEp3JvA44CKLAqn3JAGFttixkcRaKg"
-SHEET_NAME = "Daily Ad Group Performance Report"  # updated to match the correct worksheet name
+SHEET_NAME = "Daily Ad Group Performance Report"
 
 def load_campaign_data():
-    # Authenticate using the service account
+    # Load service account from base64 environment variable
+    b64_key = os.getenv("GOOGLE_CREDENTIALS_B64")
+    if not b64_key:
+        raise ValueError("Missing GOOGLE_CREDENTIALS_B64 environment variable")
+
+    key_data = base64.b64decode(b64_key).decode("utf-8")
+    creds_dict = json.loads(key_data)
+
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("bots-464109-66b37fe69997.json", scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
 
-    # Open the sheet and load data
+    # Load sheet data
     sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
-    data = sheet.get_all_records(head=2)  # skip first row, real headers start at row 2
+    data = sheet.get_all_records(head=2)
     df = pd.DataFrame(data)
 
-    # Normalize and rename columns
+    # Normalize and rename
     df.columns = [col.strip().lower() for col in df.columns]
     rename_map = {
         'ad group name': 'Campaign',
@@ -29,27 +38,21 @@ def load_campaign_data():
     }
     df = df.rename(columns=rename_map)
 
-    # Keep only needed columns (skipping conversions)
+    # Keep only needed columns
     df = df[['Campaign', 'clicks', 'spend']]
-
     return df
 
 def add_kpis(df):
-    # Clean and convert columns
     df['spend'] = df['spend'].replace('[€$,]', '', regex=True)
     df['spend'] = pd.to_numeric(df['spend'], errors='coerce')
     df['clicks'] = pd.to_numeric(df['clicks'], errors='coerce')
-
-    # Fill NaNs with 0 to avoid crash
     df[['spend', 'clicks']] = df[['spend', 'clicks']].fillna(0)
 
-    # Add calculated KPIs
     df['ctr'] = (df['clicks'] / 100000) * 100
     df['cpc'] = df['spend'] / df['clicks']
     df['conversion_rate'] = 0
     df['cost_per_conversion'] = 0
     return df
-
 
 def get_yesterday_file(today):
     yesterday = today - datetime.timedelta(days=1)
