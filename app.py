@@ -28,11 +28,16 @@ def index():
 
 @app.route("/trigger")
 def trigger():
+    key = request.args.get("key")
+    if key != os.getenv("TRIGGER_KEY"):
+        return "❌ Unauthorized", 403
+
     global last_insights, report_ready
     df, insights = fetch_sheet_data()
     last_insights = insights
     report_ready = True
     return "✅ Report updated successfully"
+
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
