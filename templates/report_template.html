@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Daily Google Ads KPI Report</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            color: #222;
+            padding: 40px;
+            max-width: 850px;
+            margin: auto;
+            background: #fff;
+        }
+
+        h1 {
+            color: #0066cc;
+            margin-bottom: 5px;
+        }
+
+        em {
+            color: #555;
+            font-size: 14px;
+        }
+
+        .section {
+            margin-top: 30px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            margin-top: 15px;
+        }
+
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: right;
+        }
+
+        th {
+            background-color: #f0f2f5;
+            color: #333;
+        }
+
+        td:first-child, th:first-child {
+            text-align: left;
+        }
+
+        .highlight-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        ul.recommendations {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+
+        ul.recommendations li {
+            margin-bottom: 8px;
+        }
+
+        img {
+            width: 100%;
+            max-height: 400px;
+            margin-top: 25px;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>📊 Daily Google Ads KPI Report</h1>
+    <p><em>Generated on {{ now }}</em></p>
+
+    <div class="section">
+        <h2>💡 Key Insights</h2>
+        {{ insights | safe }}
+    </div>
+
+    <div class="section">
+        <h2>📌 Campaign Performance Summary</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Campaign</th>
+                    <th>Clicks</th>
+                    <th>Spend (€)</th>
+                    <th>CPC (€)</th>
+                    <th>CTR (%)</th>
+                    <th>Conversions</th>
+                    <th>CVR (%)</th>
+                    <th>Cost/Conv (€)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in campaigns %}
+                <tr>
+                    <td>{{ row['Campaign'] }}</td>
+                    <td>{{ row['clicks'] }} {{ row.get('clicks_trend', '') }}</td>
+                    <td>{{ "%.2f"|format(row['spend']) }}</td>
+                    <td>{{ "%.2f"|format(row['cpc']) }} {{ row.get('cpc_trend', '') }}</td>
+                    <td>{{ "%.2f"|format(row['ctr']) }}</td>
+                    <td>{{ row['conversions'] }}</td>
+                    <td>{{ "%.2f"|format(row['conversion_rate'] * 100) }} {{ row.get('conversion_rate_trend', '') }}</td>
+                    <td>{{ "%.2f"|format(row['cost_per_conversion']) }} {{ row.get('cost_per_conversion_trend', '') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>📉 Visual Overview</h2>
+        <img src="data:image/png;base64,{{ chart_base64 }}">
+    </div>
+
+</body>
+</html>
