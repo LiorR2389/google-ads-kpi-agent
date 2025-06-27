@@ -29,42 +29,68 @@ def load_campaign_data():
         
         print(f"📊 Total rows loaded: {len(all_data)}")
         
+        # Print first 10 rows to debug
+        print("🔍 First 10 rows of raw data:")
+        for i, row in enumerate(all_data[:10]):
+            print(f"Row {i}: {row}")
+        
         if len(all_data) < 3:
             print("⚠️ Not enough data rows found")
             return create_empty_dataframe()
         
-        # Find the header row - look for "Date" in the first column
-        header_row_idx = None
+        # Look for the actual data - skip header rows
+        data_start_row = None
         for i, row in enumerate(all_data):
-            if row and len(row) > 0 and 'Date' in str(row[0]):
-                header_row_idx = i
+            # Look for a row that has a date-like pattern and campaign name
+            if len(row) > 1 and any(char.isdigit() for char in str(row[0])) and str(row[1]).strip():
+                data_start_row = i
+                print(f"🎯 Found data starting at row {i}: {row}")
                 break
         
-        if header_row_idx is None:
-            print("⚠️ Could not find header row with 'Date'")
+        if data_start_row is None:
+            print("⚠️ Could not find data rows")
             return create_empty_dataframe()
         
-        headers = all_data[header_row_idx]
-        data_rows = all_data[header_row_idx + 1:]
+        # Use the row before data as headers, or create our own
+        if data_start_row > 0:
+            headers = all_data[data_start_row - 1]
+        else:
+            headers = ['Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions', 'Average Target Cpa Micros', 'Search Impression Share']
         
-        print(f"🔍 Found headers at row {header_row_idx}: {headers}")
+        data_rows = all_data[data_start_row:]
+        
+        print(f"🔍 Using headers: {headers}")
         print(f"📝 Data rows available: {len(data_rows)}")
+        print(f"📝 First 3 data rows:")
+        for i, row in enumerate(data_rows[:3]):
+            print(f"  {i}: {row}")
         
         # Filter out empty rows
-        data_rows = [row for row in data_rows if any(cell.strip() for cell in row if cell)]
+        valid_data_rows = []
+        for row in data_rows:
+            if len(row) >= 2 and str(row[0]).strip() and str(row[1]).strip():
+                valid_data_rows.append(row)
         
-        if not data_rows:
-            print("⚠️ No data rows found after filtering")
+        print(f"📝 Valid data rows after filtering: {len(valid_data_rows)}")
+        
+        if not valid_data_rows:
+            print("⚠️ No valid data rows found after filtering")
             return create_empty_dataframe()
         
-        df = pd.DataFrame(data_rows, columns=headers)
+        df = pd.DataFrame(valid_data_rows, columns=headers)
         df.columns = [str(col).strip() for col in df.columns]
         
-        print(f"✅ Created DataFrame with {len(df)} rows and columns: {list(df.columns)}")
+        print(f"✅ Created DataFrame with {len(df)} rows")
+        print(f"📋 Columns: {list(df.columns)}")
+        print(f"📊 Sample data:")
+        print(df.head())
+        
         return df
         
     except Exception as e:
         print(f"❌ Error in load_campaign_data: {e}")
+        import traceback
+        traceback.print_exc()
         return create_empty_dataframe()
 
 def create_empty_dataframe():
@@ -83,16 +109,18 @@ def clean_and_map_columns(df):
     if df.empty:
         return df
     
+    print(f"🔧 Starting column mapping for: {list(df.columns)}")
+    
     column_mapping = {}
     for col in df.columns:
         col_lower = str(col).lower().strip()
         if 'date' in col_lower:
             column_mapping[col] = 'date'
-        elif 'campaign' in col_lower and 'name' in col_lower:
+        elif 'campaign' in col_lower:
             column_mapping[col] = 'campaign'
-        elif col_lower == 'impressions':
+        elif 'impression' in col_lower and 'share' not in col_lower:
             column_mapping[col] = 'impressions'
-        elif col_lower == 'clicks':
+        elif 'click' in col_lower:
             column_mapping[col] = 'clicks'
         elif 'ctr' in col_lower:
             column_mapping[col] = 'ctr_raw'
@@ -101,54 +129,95 @@ def clean_and_map_columns(df):
         elif 'impression' in col_lower and 'share' in col_lower:
             column_mapping[col] = 'impression_share'
     
+    print(f"🗺️ Column mapping: {column_mapping}")
+    
     df_mapped = df.rename(columns=column_mapping)
-    print(f"🗺️ Column mapping applied: {column_mapping}")
+    print(f"📋 Mapped columns: {list(df_mapped.columns)}")
+    
     return df_mapped
 
-def get_date_data(df, target_date):
-    """Get data for a specific date"""
+def filter_for_date(df, target_date):
+    """Filter data for a specific date"""
     if df.empty or 'date' not in df.columns:
-        return create_processed_empty_dataframe()
+        print(f"⚠️ Cannot filter by date - empty df or no date column")
+        return df
     
+    print(f"📅 Filtering for date: {target_date}")
+    print(f"📊 Before filtering: {len(df)} rows")
+    
+    # Clean and parse dates
     df_copy = df.copy()
     df_copy = df_copy[df_copy['date'].notna() & (df_copy['date'] != '')]
     
-    if len(df_copy) == 0:
-        return create_processed_empty_dataframe()
-    
-    df_copy['date'] = pd.to_datetime(df_copy['date'], errors='coerce')
-    df_copy = df_copy.dropna(subset=['date'])
+    print(f"📊 After removing empty dates: {len(df_copy)} rows")
     
     if len(df_copy) == 0:
-        return create_processed_empty_dataframe()
+        return df_copy
+    
+    # Show sample dates
+    print(f"📅 Sample date values: {df_copy['date'].head(5).tolist()}")
+    
+    # Parse dates
+    df_copy['date_parsed'] = pd.to_datetime(df_copy['date'], errors='coerce')
+    df_copy = df_copy.dropna(subset=['date_parsed'])
+    
+    print(f"📊 After parsing dates: {len(df_copy)} rows")
+    
+    if len(df_copy) == 0:
+        return df_copy
+    
+    # Show parsed dates
+    print(f"📅 Sample parsed dates: {df_copy['date_parsed'].head(5).tolist()}")
     
     # Filter for target date
-    df_filtered = df_copy[df_copy['date'].dt.date == target_date]
+    df_filtered = df_copy[df_copy['date_parsed'].dt.date == target_date]
     
-    # Filter for valid campaigns
-    if 'campaign' in df_filtered.columns:
-        df_filtered = df_filtered[df_filtered['campaign'].notna() & (df_filtered['campaign'] != '')]
+    print(f"📊 After filtering for {target_date}: {len(df_filtered)} rows")
     
-    return df_filtered
+    if len(df_filtered) > 0:
+        print(f"✅ Found data for {target_date}")
+        print(f"📊 Sample filtered data:")
+        print(df_filtered[['date', 'campaign', 'impressions', 'clicks']].head())
+    
+    return df_filtered.drop('date_parsed', axis=1)
 
 def add_kpis(df):
     if df.empty:
+        print("⚠️ Empty dataframe in add_kpis")
+        return create_processed_empty_dataframe()
+    
+    print(f"🧮 Adding KPIs to {len(df)} rows")
+    
+    # Filter for valid campaigns
+    if 'campaign' in df.columns:
+        df = df[df['campaign'].notna() & (df['campaign'] != '')]
+        print(f"📊 After filtering valid campaigns: {len(df)} rows")
+    
+    if len(df) == 0:
+        print("⚠️ No valid campaigns found")
         return create_processed_empty_dataframe()
     
     # Clean numeric columns
     numeric_columns = ['impressions', 'clicks', 'conversions']
     for col in numeric_columns:
         if col in df.columns:
+            print(f"🔢 Processing {col}: {df[col].head(3).tolist()}")
             df[col] = df[col].astype(str).str.replace(r'[€$,%]', '', regex=True)
+            df[col] = df[col].str.replace(',', '')
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            print(f"✅ Cleaned {col}: {df[col].head(3).tolist()}")
         else:
+            print(f"⚠️ Column {col} not found, setting to 0")
             df[col] = 0
     
     # Handle CTR
     if 'ctr_raw' in df.columns:
+        print(f"🎯 Processing CTR: {df['ctr_raw'].head(3).tolist()}")
         df['ctr_raw'] = df['ctr_raw'].astype(str).str.replace('%', '').str.replace('€', '')
         df['ctr'] = pd.to_numeric(df['ctr_raw'], errors='coerce').fillna(0)
+        print(f"✅ Cleaned CTR: {df['ctr'].head(3).tolist()}")
     else:
+        print("🧮 Calculating CTR from impressions and clicks")
         df['ctr'] = ((df['clicks'] / df['impressions']) * 100).round(2)
         df['ctr'] = df['ctr'].replace([float('inf'), -float('inf')], 0).fillna(0)
     
@@ -183,6 +252,13 @@ def add_kpis(df):
     
     df['quality_score'] = 7.5
     
+    print(f"✅ KPIs added successfully")
+    print(f"📊 Final summary:")
+    print(f"   Campaigns: {len(df)}")
+    print(f"   Total impressions: {df['impressions'].sum():,.0f}")
+    print(f"   Total clicks: {df['clicks'].sum():,.0f}")
+    print(f"   Total spend (est): €{df['spend'].sum():.2f}")
+    
     return df
 
 def create_processed_empty_dataframe():
@@ -199,60 +275,6 @@ def create_processed_empty_dataframe():
         'impression_share': [],
         'quality_score': []
     })
-
-def calculate_trends(today_df, yesterday_df):
-    """Calculate trends between today and yesterday"""
-    if today_df.empty:
-        return today_df
-    
-    if yesterday_df.empty:
-        # No yesterday data, add empty trend columns
-        for col in ['clicks', 'impressions', 'spend', 'ctr', 'conversions']:
-            today_df[f'{col}_trend'] = '🆕'
-            today_df[f'{col}_change'] = 0
-        return today_df
-    
-    # Merge today and yesterday data
-    merged = today_df.merge(yesterday_df, on='campaign', suffixes=('', '_prev'), how='left')
-    
-    # Calculate trends for key metrics
-    trend_columns = ['clicks', 'impressions', 'spend', 'ctr', 'conversions']
-    
-    for col in trend_columns:
-        trend_col = f'{col}_trend'
-        change_col = f'{col}_change'
-        
-        today_df[trend_col] = ''
-        today_df[change_col] = 0
-        
-        for idx, row in merged.iterrows():
-            today_val = row[col] if pd.notna(row[col]) else 0
-            yesterday_val = row[f'{col}_prev'] if pd.notna(row[f'{col}_prev']) else 0
-            
-            if yesterday_val == 0:
-                if today_val > 0:
-                    arrow = '🆕'
-                    change = 0
-                else:
-                    arrow = ''
-                    change = 0
-            else:
-                change_pct = ((today_val - yesterday_val) / yesterday_val) * 100
-                
-                if change_pct > 5:
-                    arrow = '⬆️'
-                elif change_pct < -5:
-                    arrow = '⬇️'
-                else:
-                    arrow = '➡️'
-                
-                change = round(change_pct, 1)
-            
-            campaign_mask = today_df['campaign'] == row['campaign']
-            today_df.loc[campaign_mask, trend_col] = arrow
-            today_df.loc[campaign_mask, change_col] = change
-    
-    return today_df
 
 def generate_summary_stats(df):
     if df.empty:
@@ -278,50 +300,13 @@ def generate_summary_stats(df):
         'avg_impression_share': round(df['impression_share'].mean(), 1)
     }
 
-def calculate_summary_trends(today_summary, yesterday_summary):
-    """Calculate trends for summary statistics"""
-    trends = {}
-    
-    metrics = ['total_spend', 'total_clicks', 'total_impressions', 'avg_ctr', 'avg_cpc']
-    
-    for metric in metrics:
-        today_val = today_summary[metric]
-        yesterday_val = yesterday_summary[metric]
-        
-        if yesterday_val == 0:
-            if today_val > 0:
-                trends[f'{metric}_trend'] = '🆕'
-                trends[f'{metric}_change'] = 0
-            else:
-                trends[f'{metric}_trend'] = ''
-                trends[f'{metric}_change'] = 0
-        else:
-            change_pct = ((today_val - yesterday_val) / yesterday_val) * 100
-            
-            if change_pct > 5:
-                trends[f'{metric}_trend'] = '⬆️'
-            elif change_pct < -5:
-                trends[f'{metric}_trend'] = '⬇️'
-            else:
-                trends[f'{metric}_trend'] = '➡️'
-            
-            trends[f'{metric}_change'] = round(change_pct, 1)
-    
-    return trends
-
 def generate_insights(df, yesterday_df=None):
     summary = generate_summary_stats(df)
-    
-    # Calculate summary trends if yesterday data exists
-    summary_trends = {}
-    if yesterday_df is not None and not yesterday_df.empty:
-        yesterday_summary = generate_summary_stats(yesterday_df)
-        summary_trends = calculate_summary_trends(summary, yesterday_summary)
     
     if df.empty:
         return {
             'summary': summary,
-            'summary_trends': summary_trends,
+            'summary_trends': {},
             'highlights': [
                 {'metric': '📊 Status', 'campaign': 'No Data', 'value': 'No campaigns found', 'trend': '', 'change': 0}
             ],
@@ -337,8 +322,8 @@ def generate_insights(df, yesterday_df=None):
             'metric': '🥇 Most Clicks',
             'campaign': str(most_clicks['campaign'])[:30],
             'value': f"{int(most_clicks['clicks']):,}",
-            'trend': most_clicks.get('clicks_trend', ''),
-            'change': most_clicks.get('clicks_change', 0)
+            'trend': '',
+            'change': 0
         })
     
     if df['impressions'].sum() > 0:
@@ -348,8 +333,8 @@ def generate_insights(df, yesterday_df=None):
             'metric': '👁️ Most Impressions',
             'campaign': str(most_impressions['campaign'])[:30],
             'value': f"{int(most_impressions['impressions']):,}",
-            'trend': most_impressions.get('impressions_trend', ''),
-            'change': most_impressions.get('impressions_change', 0)
+            'trend': '',
+            'change': 0
         })
     
     if df['ctr'].sum() > 0:
@@ -359,28 +344,6 @@ def generate_insights(df, yesterday_df=None):
             'metric': '🎯 Best CTR',
             'campaign': str(best_ctr['campaign'])[:30],
             'value': f"{best_ctr['ctr']:.2f}%",
-            'trend': best_ctr.get('ctr_trend', ''),
-            'change': best_ctr.get('ctr_change', 0)
-        })
-    
-    if df['conversions'].sum() > 0:
-        best_conv_idx = df['conversion_rate'].idxmax()
-        best_conv = df.loc[best_conv_idx]
-        highlights.append({
-            'metric': '🔄 Best Conv. Rate',
-            'campaign': str(best_conv['campaign'])[:30],
-            'value': f"{best_conv['conversion_rate']:.2f}%",
-            'trend': best_conv.get('conversion_rate_trend', ''),
-            'change': best_conv.get('conversion_rate_change', 0)
-        })
-    
-    if len(highlights) < 5:
-        best_imp_share_idx = df['impression_share'].idxmax()
-        best_imp_share = df.loc[best_imp_share_idx]
-        highlights.append({
-            'metric': '📊 Best Imp. Share',
-            'campaign': str(best_imp_share['campaign'])[:30],
-            'value': f"{best_imp_share['impression_share']:.1f}%",
             'trend': '',
             'change': 0
         })
@@ -392,7 +355,7 @@ def generate_insights(df, yesterday_df=None):
     
     return {
         'summary': summary,
-        'summary_trends': summary_trends,
+        'summary_trends': {},
         'highlights': highlights,
         'campaigns': df.to_dict('records')
     }
@@ -402,7 +365,7 @@ def create_enhanced_charts(df):
     
     if df.empty:
         plt.figure(figsize=(10, 6))
-        plt.text(0.5, 0.5, 'No data available', ha='center', va='center', fontsize=16)
+        plt.text(0.5, 0.5, 'No data available\nCheck Google Sheets connection', ha='center', va='center', fontsize=16)
         plt.xlim(0, 1)
         plt.ylim(0, 1)
         plt.axis('off')
@@ -431,32 +394,42 @@ def create_enhanced_charts(df):
 def fetch_sheet_data():
     try:
         today = datetime.date.today()
-        yesterday = today - datetime.timedelta(days=1)
-        
-        print(f"📅 Fetching data for today: {today}")
-        print(f"📅 Looking for yesterday data: {yesterday}")
+        print(f"🚀 Starting fetch for {today}")
         
         # Load all data from sheet
         df_all = load_campaign_data()
+        
+        if df_all.empty:
+            print("❌ No data loaded from sheet")
+            return create_processed_empty_dataframe(), generate_insights(create_processed_empty_dataframe())
+        
         df_all_mapped = clean_and_map_columns(df_all)
         
-        # Get today's data
-        today_df = get_date_data(df_all_mapped, today)
+        # Try today first, then yesterday if no today data
+        today_df = filter_for_date(df_all_mapped, today)
+        
+        if today_df.empty:
+            print(f"⚠️ No data for today ({today}), trying yesterday")
+            yesterday = today - datetime.timedelta(days=1)
+            today_df = filter_for_date(df_all_mapped, yesterday)
+            
+            if today_df.empty:
+                print(f"⚠️ No data for yesterday ({yesterday}) either, using latest available")
+                # Use the most recent data available
+                if 'date' in df_all_mapped.columns:
+                    df_all_mapped['date_parsed'] = pd.to_datetime(df_all_mapped['date'], errors='coerce')
+                    df_all_mapped = df_all_mapped.dropna(subset=['date_parsed'])
+                    if not df_all_mapped.empty:
+                        latest_date = df_all_mapped['date_parsed'].max().date()
+                        today_df = filter_for_date(df_all_mapped, latest_date)
+                        print(f"📅 Using latest available date: {latest_date}")
+        
+        if today_df.empty:
+            print("❌ Still no data found")
+            return create_processed_empty_dataframe(), generate_insights(create_processed_empty_dataframe())
+        
+        # Process the data
         today_df = add_kpis(today_df)
-        
-        # Get yesterday's data
-        yesterday_df = get_date_data(df_all_mapped, yesterday)
-        yesterday_df = add_kpis(yesterday_df)
-        
-        print(f"📊 Today: {len(today_df)} campaigns")
-        print(f"📊 Yesterday: {len(yesterday_df)} campaigns")
-        
-        # Calculate trends
-        if not yesterday_df.empty:
-            today_df = calculate_trends(today_df, yesterday_df)
-            print("📈 Trends calculated successfully")
-        else:
-            print("⚠️ No yesterday data found - skipping trends")
         
         # Save data
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -465,10 +438,10 @@ def fetch_sheet_data():
         # Create charts
         create_enhanced_charts(today_df)
         
-        # Generate insights with trends
-        insights = generate_insights(today_df, yesterday_df)
+        # Generate insights
+        insights = generate_insights(today_df)
         
-        print(f"✅ Successfully processed with trends")
+        print(f"✅ Successfully processed {len(today_df)} campaigns")
         return today_df, insights
         
     except Exception as e:
