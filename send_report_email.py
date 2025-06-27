@@ -1,25 +1,94 @@
 import os
 import smtplib
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 
-def generate_simple_html_email(insights_data, chart_base64):
-    """Generate a clean, simple HTML email"""
+def generate_trend_card(title, current, previous, trend, icon="📊"):
+    """Generate HTML for a trend comparison card"""
+    # Determine trend color
+    if "📈" in trend:
+        trend_color = "#28a745"  # Green for positive
+        bg_color = "#d4f3d0"
+    elif "📉" in trend:
+        trend_color = "#dc3545"  # Red for negative
+        bg_color = "#f8d7da"
+    else:
+        trend_color = "#6c757d"  # Gray for no change
+        bg_color = "#f8f9fa"
+    
+    return f"""
+    <div style="flex: 1; min-width: 180px; background: {bg_color}; padding: 20px; border-radius: 8px; text-align: center; border-left: 4px solid {trend_color}; margin: 5px;">
+        <div style="font-size: 12px; color: {trend_color}; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">{title}</div>
+        <div style="font-size: 24px; font-weight: bold; color: #333; margin-bottom: 5px;">{current}</div>
+        <div style="font-size: 12px; color: {trend_color}; font-weight: bold;">{trend}</div>
+        <div style="font-size: 10px; color: #666; margin-top: 3px;">vs. last week: {previous}</div>
+    </div>
+    """
+
+def generate_simple_html_email_with_trends(insights_data, chart_base64):
+    """Generate a clean, simple HTML email with trend comparisons"""
     summary = insights_data['summary']
+    trends = insights_data.get('summary_trends', {})
     highlights = insights_data['highlights']
     campaigns = insights_data['campaigns'][:5]  # Top 5 campaigns
+    comparison_available = insights_data.get('comparison_available', False)
     
-    # Generate highlights rows
+    # Generate summary cards with trends
+    summary_cards = ""
+    
+    # Total Spend
+    spend_trend = trends.get('total_spend', {})
+    summary_cards += generate_trend_card(
+        "Total Spend",
+        f"€{summary['total_spend']:.2f}",
+        f"€{spend_trend.get('previous', 0):.2f}",
+        spend_trend.get('trend', '➡️ No data'),
+        "💰"
+    )
+    
+    # Total Clicks
+    clicks_trend = trends.get('total_clicks', {})
+    summary_cards += generate_trend_card(
+        "Total Clicks",
+        f"{summary['total_clicks']:,}",
+        f"{clicks_trend.get('previous', 0):,}",
+        clicks_trend.get('trend', '➡️ No data'),
+        "👆"
+    )
+    
+    # Average CPC
+    cpc_trend = trends.get('avg_cpc', {})
+    summary_cards += generate_trend_card(
+        "Avg CPC",
+        f"€{summary['avg_cpc']:.2f}",
+        f"€{cpc_trend.get('previous', 0):.2f}",
+        cpc_trend.get('trend', '➡️ No data'),
+        "💲"
+    )
+    
+    # Impressions
+    imp_trend = trends.get('total_impressions', {})
+    summary_cards += generate_trend_card(
+        "Impressions",
+        f"{summary['total_impressions']:,}",
+        f"{imp_trend.get('previous', 0):,}",
+        imp_trend.get('trend', '➡️ No data'),
+        "👁️"
+    )
+    
+    # Generate highlights rows with trends
     highlights_html = ""
     for highlight in highlights:
+        trend_cell = f"<td style='padding: 10px; text-align: center; font-weight: bold; color: #28a745;'>{highlight['trend']}</td>" if highlight['trend'] else "<td style='padding: 10px; text-align: center; color: #999;'>-</td>"
         highlights_html += f"""
         <tr style="border-bottom: 1px solid #eee;">
             <td style="padding: 10px; font-weight: bold;">{highlight['metric']}</td>
             <td style="padding: 10px;">{highlight['campaign']}</td>
             <td style="padding: 10px; color: #667eea; font-weight: bold;">{highlight['value']}</td>
+            {trend_cell}
         </tr>
         """
     
@@ -36,6 +105,27 @@ def generate_simple_html_email(insights_data, chart_base64):
         </tr>
         """
     
+    # Comparison note
+    comparison_note = ""
+    if comparison_available:
+        comparison_note = f"""
+        <div style="background: #e7f3ff; border-left: 4px solid #0066cc; padding: 15px; margin: 20px 0; border-radius: 0 6px 6px 0;">
+            <h4 style="color: #0066cc; margin: 0 0 10px 0; font-size: 14px;">📊 Week-over-Week Comparison</h4>
+            <p style="margin: 0; color: #0066cc; font-size: 12px;">
+                Trends shown compare today's data with the same day last week ({(datetime.now() - timedelta(days=7)).strftime('%B %d, %Y')}).
+                Green arrows (📈) indicate improvement, red arrows (📉) indicate decline.
+            </p>
+        </div>
+        """
+    else:
+        comparison_note = f"""
+        <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 0 6px 6px 0;">
+            <p style="margin: 0; color: #856404; font-size: 12px;">
+                ⚠️ No comparison data available for last week. Trends will appear once we have historical data.
+            </p>
+        </div>
+        """
+    
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -44,7 +134,7 @@ def generate_simple_html_email(insights_data, chart_base64):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
     <body style="margin: 0; padding: 20px; font-family: Arial, sans-serif; background-color: #f5f5f5;">
-        <div style="max-width: 800px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <div style="max-width: 900px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             
             <!-- Header -->
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
@@ -52,80 +142,113 @@ def generate_simple_html_email(insights_data, chart_base64):
                 <p style="margin: 10px 0 0 0; opacity: 0.9;">{datetime.now().strftime('%B %d, %Y')}</p>
             </div>
             
-            <!-- Summary -->
+            <!-- Summary with Trends -->
             <div style="padding: 30px;">
-                <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 30px;">
-                    <div style="flex: 1; min-width: 150px; background: #f8f9fa; padding: 20px; border-radius: 6px; text-align: center; border-left: 4px solid #667eea;">
-                        <div style="font-size: 12px; color: #667eea; font-weight: bold; margin-bottom: 5px;">TOTAL SPEND</div>
-                        <div style="font-size: 20px; font-weight: bold;">€{summary['total_spend']:.2f}</div>
-                    </div>
-                    <div style="flex: 1; min-width: 150px; background: #f8f9fa; padding: 20px; border-radius: 6px; text-align: center; border-left: 4px solid #28a745;">
-                        <div style="font-size: 12px; color: #28a745; font-weight: bold; margin-bottom: 5px;">TOTAL CLICKS</div>
-                        <div style="font-size: 20px; font-weight: bold;">{summary['total_clicks']:,}</div>
-                    </div>
-                    <div style="flex: 1; min-width: 150px; background: #f8f9fa; padding: 20px; border-radius: 6px; text-align: center; border-left: 4px solid #ffc107;">
-                        <div style="font-size: 12px; color: #e67e22; font-weight: bold; margin-bottom: 5px;">AVG CPC</div>
-                        <div style="font-size: 20px; font-weight: bold;">€{summary['avg_cpc']:.2f}</div>
-                    </div>
-                    <div style="flex: 1; min-width: 150px; background: #f8f9fa; padding: 20px; border-radius: 6px; text-align: center; border-left: 4px solid #17a2b8;">
-                        <div style="font-size: 12px; color: #17a2b8; font-weight: bold; margin-bottom: 5px;">IMPRESSIONS</div>
-                        <div style="font-size: 20px; font-weight: bold;">{summary['total_impressions']:,}</div>
-                    </div>
+                <h2 style="color: #333; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+                    📈 <span>Performance Overview</span>
+                </h2>
+                
+                {comparison_note}
+                
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 30px;">
+                    {summary_cards}
                 </div>
                 
-                <!-- Highlights -->
-                <h2 style="color: #333; margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">🎯 Performance Highlights</h2>
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
-                    <thead>
-                        <tr style="background: #667eea; color: white;">
-                            <th style="padding: 12px; text-align: left;">Metric</th>
-                            <th style="padding: 12px; text-align: left;">Campaign</th>
-                            <th style="padding: 12px; text-align: left;">Value</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {highlights_html}
-                    </tbody>
-                </table>
+                <!-- Highlights Table with Trends -->
+                <h2 style="color: #333; font-size: 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                    🎯 <span>Performance Highlights</span>
+                </h2>
+                <div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: linear-gradient(135deg, #343a40, #495057); color: white;">
+                                <th style="padding: 15px; text-align: left; font-weight: 600; font-size: 13px;">Metric</th>
+                                <th style="padding: 15px; text-align: left; font-weight: 600; font-size: 13px;">Campaign</th>
+                                <th style="padding: 15px; text-align: left; font-weight: 600; font-size: 13px;">Value</th>
+                                <th style="padding: 15px; text-align: center; font-weight: 600; font-size: 13px;">Trend</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {highlights_html}
+                        </tbody>
+                    </table>
+                </div>
                 
                 <!-- Top Campaigns -->
-                <h2 style="color: #333; margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">📈 Top Campaign Performance</h2>
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 14px;">
-                    <thead>
-                        <tr style="background: #343a40; color: white;">
-                            <th style="padding: 10px; text-align: left;">Campaign</th>
-                            <th style="padding: 10px; text-align: center;">Impressions</th>
-                            <th style="padding: 10px; text-align: center;">Clicks</th>
-                            <th style="padding: 10px; text-align: center;">CTR</th>
-                            <th style="padding: 10px; text-align: center;">Est. Spend</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {campaigns_html}
-                    </tbody>
-                </table>
+                <h2 style="color: #333; font-size: 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                    🏆 <span>Top Campaign Performance</span>
+                </h2>
+                <div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                        <thead>
+                            <tr style="background: linear-gradient(135deg, #343a40, #495057); color: white;">
+                                <th style="padding: 12px; text-align: left; font-weight: 600; font-size: 13px;">Campaign</th>
+                                <th style="padding: 12px; text-align: center; font-weight: 600; font-size: 13px;">Impressions</th>
+                                <th style="padding: 12px; text-align: center; font-weight: 600; font-size: 13px;">Clicks</th>
+                                <th style="padding: 12px; text-align: center; font-weight: 600; font-size: 13px;">CTR</th>
+                                <th style="padding: 12px; text-align: center; font-weight: 600; font-size: 13px;">Est. Spend</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {campaigns_html}
+                        </tbody>
+                    </table>
+                </div>
                 
                 <!-- Chart -->
-                <h2 style="color: #333; margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">💰 Spend Overview</h2>
-                <div style="text-align: center; padding: 20px; background: #f8f9fa; border-radius: 6px;">
-                    <img src="data:image/png;base64,{chart_base64}" style="max-width: 100%; height: auto;" alt="Spend Chart" />
+                <h2 style="color: #333; font-size: 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                    💰 <span>Spend Overview</span>
+                </h2>
+                <div style="text-align: center; padding: 20px; background: #f8f9fa; border-radius: 8px; margin-bottom: 30px;">
+                    <img src="data:image/png;base64,{chart_base64}" style="max-width: 100%; height: auto; border-radius: 6px;" alt="Spend Chart" />
+                </div>
+                
+                <!-- Key Insights with Trends -->
+                <div style="background: #e7f3ff; border-left: 4px solid #0066cc; padding: 20px; margin: 20px 0; border-radius: 0 8px 8px 0;">
+                    <h3 style="color: #0066cc; margin-top: 0; margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+                        💡 <span>Key Insights & Trends</span>
+                    </h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 14px; color: #666; margin-bottom: 5px;">Average CTR</div>
+                            <div style="font-size: 18px; font-weight: bold; color: #0066cc;">{summary['avg_ctr']:.2f}%</div>
+                            <div style="font-size: 11px; color: #0066cc;">{trends.get('avg_ctr', {}).get('trend', '➡️ No data')}</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 14px; color: #666; margin-bottom: 5px;">Total Conversions</div>
+                            <div style="font-size: 18px; font-weight: bold; color: #0066cc;">{summary['total_conversions']}</div>
+                            <div style="font-size: 11px; color: #0066cc;">{trends.get('total_conversions', {}).get('trend', '➡️ No data')}</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 14px; color: #666; margin-bottom: 5px;">Avg Conv. Rate</div>
+                            <div style="font-size: 18px; font-weight: bold; color: #0066cc;">{summary['avg_conversion_rate']:.1f}%</div>
+                            <div style="font-size: 11px; color: #0066cc;">{trends.get('avg_conversion_rate', {}).get('trend', '➡️ No data')}</div>
+                        </div>
+                    </div>
+                    <div style="border-top: 1px solid #cce7ff; padding-top: 15px; margin-top: 15px;">
+                        <p style="margin: 0; color: #0066cc; font-weight: 500;">
+                            💡 Your Demand Gen campaign continues to show strong performance with excellent CTR!
+                            {"Monitor spending trends to optimize ROI." if comparison_available else "Historical trend data will be available after a week of data collection."}
+                        </p>
+                    </div>
                 </div>
                 
                 <!-- Recommendations -->
-                <div style="background: #e7f3ff; border-left: 4px solid #0066cc; padding: 20px; margin: 20px 0; border-radius: 0 6px 6px 0;">
-                    <h3 style="color: #0066cc; margin-top: 0;">✅ Quick Recommendations</h3>
+                <div style="background: #f8f9fa; border-left: 4px solid #28a745; padding: 20px; margin: 20px 0; border-radius: 0 8px 8px 0;">
+                    <h3 style="color: #28a745; margin-top: 0; margin-bottom: 15px;">✅ Smart Recommendations</h3>
                     <ul style="margin: 0; padding-left: 20px; color: #333;">
-                        <li style="margin-bottom: 5px;">🚀 <strong>Demand Gen campaign</strong> shows excellent CTR - consider increasing budget</li>
-                        <li style="margin-bottom: 5px;">🔍 <strong>Performance Max</strong> has good conversion potential - optimize targeting</li>
-                        <li style="margin-bottom: 5px;">📊 <strong>Search campaigns</strong> may need keyword review for better efficiency</li>
+                        <li style="margin-bottom: 8px;">🚀 <strong>Demand Gen campaign</strong> shows excellent CTR - consider increasing budget {f"(trending {trends.get('total_clicks', {}).get('trend', '')})" if comparison_available else ""}</li>
+                        <li style="margin-bottom: 8px;">🔍 <strong>Performance Max</strong> has good conversion potential - optimize targeting</li>
+                        <li style="margin-bottom: 8px;">📊 <strong>Search campaigns</strong> may need keyword review for better efficiency</li>
+                        {"<li style='margin-bottom: 8px;'>📈 <strong>Overall trends</strong> looking positive - maintain current strategy</li>" if comparison_available and any("📈" in trend.get('trend', '') for trend in trends.values()) else ""}
                     </ul>
                 </div>
             </div>
             
             <!-- Footer -->
-            <div style="background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666;">
-                <p style="margin: 0;">Generated by KPI Bot | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-                <p style="margin: 5px 0 0 0;">* Spend values are estimates based on industry benchmarks</p>
+            <div style="background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #e9ecef;">
+                <p style="margin: 0;">🤖 Automated Google Ads Reporting with Trend Analysis • Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p style="margin: 5px 0 0 0;">* Spend values are estimates based on industry benchmarks • Trends compare week-over-week performance</p>
             </div>
         </div>
     </body>
@@ -135,7 +258,7 @@ def generate_simple_html_email(insights_data, chart_base64):
     return html
 
 def send_report_email(insights_data, image_path):
-    """Send report with multiple fallback methods"""
+    """Send report with trend comparisons and multiple fallback methods"""
     
     # Check environment variables
     email_user = os.getenv("EMAIL_USER")
@@ -158,32 +281,41 @@ def send_report_email(insights_data, image_path):
         else:
             print(f"⚠️ Chart image not found: {image_path}")
         
-        # Create HTML email
-        html_content = generate_simple_html_email(insights_data, chart_base64)
+        # Create HTML email with trends
+        html_content = generate_simple_html_email_with_trends(insights_data, chart_base64)
         
-        # Create plain text version
+        # Create plain text version with trends
         summary = insights_data['summary']
+        trends = insights_data.get('summary_trends', {})
+        comparison_available = insights_data.get('comparison_available', False)
+        
         plain_text = f"""
-Google Ads Daily Report - {datetime.now().strftime('%B %d, %Y')}
+Google Ads Daily Report with Trends - {datetime.now().strftime('%B %d, %Y')}
 
-SUMMARY:
-• Total Spend: €{summary['total_spend']:.2f}
-• Total Clicks: {summary['total_clicks']:,}
-• Total Impressions: {summary['total_impressions']:,}
-• Average CPC: €{summary['avg_cpc']:.2f}
-• Average CTR: {summary['avg_ctr']:.2f}%
+PERFORMANCE OVERVIEW {"(vs. last week)" if comparison_available else "(no comparison data yet)"}:
+• Total Spend: €{summary['total_spend']:.2f} {trends.get('total_spend', {}).get('trend', '')}
+• Total Clicks: {summary['total_clicks']:,} {trends.get('total_clicks', {}).get('trend', '')}
+• Total Impressions: {summary['total_impressions']:,} {trends.get('total_impressions', {}).get('trend', '')}
+• Average CPC: €{summary['avg_cpc']:.2f} {trends.get('avg_cpc', {}).get('trend', '')}
+• Average CTR: {summary['avg_ctr']:.2f}% {trends.get('avg_ctr', {}).get('trend', '')}
 
 TOP PERFORMERS:
 """
         for highlight in insights_data['highlights']:
-            plain_text += f"• {highlight['metric']}: {highlight['campaign']} ({highlight['value']})\n"
+            trend_text = f" {highlight['trend']}" if highlight['trend'] else ""
+            plain_text += f"• {highlight['metric']}: {highlight['campaign']} ({highlight['value']}){trend_text}\n"
         
-        plain_text += "\n* Spend values are estimates based on industry benchmarks"
-        plain_text += "\nPlease view HTML version for charts and full details."
+        if comparison_available:
+            plain_text += f"\nTrends compare with {(datetime.now() - timedelta(days=7)).strftime('%B %d, %Y')}"
+        else:
+            plain_text += "\nHistorical trend data will be available after a week of data collection."
+            
+        plain_text += "\n\n* Spend values are estimates based on industry benchmarks"
+        plain_text += "\nPlease view HTML version for full trend analysis and charts."
         
         # Create email message
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f"📊 Google Ads Report - {datetime.now().strftime('%b %d, %Y')}"
+        msg['Subject'] = f"📊 Google Ads Report with Trends - {datetime.now().strftime('%b %d, %Y')}"
         msg['From'] = email_user
         msg['To'] = email_to
         
@@ -219,17 +351,17 @@ TOP PERFORMERS:
                 server.send_message(msg)
                 server.quit()
                 
-                print("✅ Email sent successfully!")
+                print("✅ Email with trends sent successfully!")
                 return
                 
             except smtplib.SMTPAuthenticationError as e:
                 print(f"❌ Authentication failed: {e}")
                 print("💡 Tip: Make sure you're using an App Password, not your regular Gmail password")
-                break  # Don't try other configs for auth errors
+                break
                 
             except smtplib.SMTPServerDisconnected as e:
                 print(f"❌ Server disconnected: {e}")
-                continue  # Try next config
+                continue
                 
             except Exception as e:
                 print(f"❌ Failed with {config['host']}:{config['port']} - {e}")
@@ -241,7 +373,6 @@ TOP PERFORMERS:
         print(f"❌ Email preparation failed: {e}")
         raise
 
-# Alternative: Simple email without attachments for testing
 def send_simple_test_email():
     """Send a simple test email to verify SMTP works"""
     email_user = os.getenv("EMAIL_USER")
@@ -253,25 +384,24 @@ def send_simple_test_email():
         return False
     
     try:
-        # Simple HTML message
         html = f"""
         <html>
         <body>
             <h2>🧪 Google Ads Bot Test</h2>
-            <p>This is a test email from your Google Ads reporting bot.</p>
+            <p>This is a test email from your enhanced Google Ads reporting bot with trend analysis.</p>
             <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <p>If you receive this, your email configuration is working! ✅</p>
+            <p><em>Next report will include week-over-week trend comparisons.</em></p>
         </body>
         </html>
         """
         
         msg = MIMEMultipart()
-        msg['Subject'] = "🧪 Google Ads Bot Test"
+        msg['Subject'] = "🧪 Google Ads Bot Test - Enhanced with Trends"
         msg['From'] = email_user
         msg['To'] = email_to
         msg.attach(MIMEText(html, 'html'))
         
-        # Try Gmail SMTP
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(email_user, email_password)
             server.send_message(msg)

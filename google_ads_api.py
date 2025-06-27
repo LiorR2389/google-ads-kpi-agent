@@ -29,11 +29,6 @@ def load_campaign_data():
         
         print(f"📊 Total rows loaded: {len(all_data)}")
         
-        # Print first 10 rows to debug
-        print("🔍 First 10 rows of raw data:")
-        for i, row in enumerate(all_data[:10]):
-            print(f"Row {i}: {row}")
-        
         if len(all_data) < 3:
             print("⚠️ Not enough data rows found")
             return create_empty_dataframe()
@@ -41,7 +36,6 @@ def load_campaign_data():
         # Look for the actual data - skip header rows
         data_start_row = None
         for i, row in enumerate(all_data):
-            # Look for a row that has a date-like pattern and campaign name
             if len(row) > 1 and any(char.isdigit() for char in str(row[0])) and str(row[1]).strip():
                 data_start_row = i
                 print(f"🎯 Found data starting at row {i}: {row}")
@@ -61,9 +55,6 @@ def load_campaign_data():
         
         print(f"🔍 Using headers: {headers}")
         print(f"📝 Data rows available: {len(data_rows)}")
-        print(f"📝 First 3 data rows:")
-        for i, row in enumerate(data_rows[:3]):
-            print(f"  {i}: {row}")
         
         # Filter out empty rows
         valid_data_rows = []
@@ -82,8 +73,6 @@ def load_campaign_data():
         
         print(f"✅ Created DataFrame with {len(df)} rows")
         print(f"📋 Columns: {list(df.columns)}")
-        print(f"📊 Sample data:")
-        print(df.head())
         
         return df
         
@@ -136,50 +125,33 @@ def clean_and_map_columns(df):
     
     return df_mapped
 
-def filter_for_date(df, target_date):
-    """Filter data for a specific date"""
-    if df.empty or 'date' not in df.columns:
-        print(f"⚠️ Cannot filter by date - empty df or no date column")
-        return df
+def get_date_range_data(df_all, target_date, days_back=7):
+    """Get data for target date and comparison period (e.g., previous week)"""
+    if df_all.empty or 'date' not in df_all.columns:
+        return pd.DataFrame(), pd.DataFrame()
     
-    print(f"📅 Filtering for date: {target_date}")
-    print(f"📊 Before filtering: {len(df)} rows")
+    print(f"📅 Getting data for {target_date} and {days_back} days back")
     
     # Clean and parse dates
-    df_copy = df.copy()
+    df_copy = df_all.copy()
     df_copy = df_copy[df_copy['date'].notna() & (df_copy['date'] != '')]
-    
-    print(f"📊 After removing empty dates: {len(df_copy)} rows")
-    
-    if len(df_copy) == 0:
-        return df_copy
-    
-    # Show sample dates
-    print(f"📅 Sample date values: {df_copy['date'].head(5).tolist()}")
-    
-    # Parse dates
     df_copy['date_parsed'] = pd.to_datetime(df_copy['date'], errors='coerce')
     df_copy = df_copy.dropna(subset=['date_parsed'])
     
-    print(f"📊 After parsing dates: {len(df_copy)} rows")
-    
     if len(df_copy) == 0:
-        return df_copy
+        return pd.DataFrame(), pd.DataFrame()
     
-    # Show parsed dates
-    print(f"📅 Sample parsed dates: {df_copy['date_parsed'].head(5).tolist()}")
+    # Get current period data (target date)
+    current_df = df_copy[df_copy['date_parsed'].dt.date == target_date]
     
-    # Filter for target date
-    df_filtered = df_copy[df_copy['date_parsed'].dt.date == target_date]
+    # Get comparison period data (same day previous week)
+    comparison_date = target_date - datetime.timedelta(days=days_back)
+    comparison_df = df_copy[df_copy['date_parsed'].dt.date == comparison_date]
     
-    print(f"📊 After filtering for {target_date}: {len(df_filtered)} rows")
+    print(f"📊 Current data ({target_date}): {len(current_df)} rows")
+    print(f"📊 Comparison data ({comparison_date}): {len(comparison_df)} rows")
     
-    if len(df_filtered) > 0:
-        print(f"✅ Found data for {target_date}")
-        print(f"📊 Sample filtered data:")
-        print(df_filtered[['date', 'campaign', 'impressions', 'clicks']].head())
-    
-    return df_filtered.drop('date_parsed', axis=1)
+    return current_df.drop('date_parsed', axis=1), comparison_df.drop('date_parsed', axis=1)
 
 def add_kpis(df):
     if df.empty:
@@ -201,23 +173,17 @@ def add_kpis(df):
     numeric_columns = ['impressions', 'clicks', 'conversions']
     for col in numeric_columns:
         if col in df.columns:
-            print(f"🔢 Processing {col}: {df[col].head(3).tolist()}")
             df[col] = df[col].astype(str).str.replace(r'[€$,%]', '', regex=True)
             df[col] = df[col].str.replace(',', '')
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            print(f"✅ Cleaned {col}: {df[col].head(3).tolist()}")
         else:
-            print(f"⚠️ Column {col} not found, setting to 0")
             df[col] = 0
     
     # Handle CTR
     if 'ctr_raw' in df.columns:
-        print(f"🎯 Processing CTR: {df['ctr_raw'].head(3).tolist()}")
         df['ctr_raw'] = df['ctr_raw'].astype(str).str.replace('%', '').str.replace('€', '')
         df['ctr'] = pd.to_numeric(df['ctr_raw'], errors='coerce').fillna(0)
-        print(f"✅ Cleaned CTR: {df['ctr'].head(3).tolist()}")
     else:
-        print("🧮 Calculating CTR from impressions and clicks")
         df['ctr'] = ((df['clicks'] / df['impressions']) * 100).round(2)
         df['ctr'] = df['ctr'].replace([float('inf'), -float('inf')], 0).fillna(0)
     
@@ -251,13 +217,6 @@ def add_kpis(df):
         df['impression_share'] = 75.0
     
     df['quality_score'] = 7.5
-    
-    print(f"✅ KPIs added successfully")
-    print(f"📊 Final summary:")
-    print(f"   Campaigns: {len(df)}")
-    print(f"   Total impressions: {df['impressions'].sum():,.0f}")
-    print(f"   Total clicks: {df['clicks'].sum():,.0f}")
-    print(f"   Total spend (est): €{df['spend'].sum():.2f}")
     
     return df
 
@@ -300,64 +259,128 @@ def generate_summary_stats(df):
         'avg_impression_share': round(df['impression_share'].mean(), 1)
     }
 
-def generate_insights(df, yesterday_df=None):
-    summary = generate_summary_stats(df)
+def calculate_percentage_change(current, previous):
+    """Calculate percentage change between current and previous values"""
+    if previous == 0:
+        return 100 if current > 0 else 0
+    return round(((current - previous) / previous) * 100, 1)
+
+def format_trend_indicator(change_pct):
+    """Format trend indicator with emoji and color"""
+    if change_pct > 0:
+        return f"📈 +{change_pct}%"
+    elif change_pct < 0:
+        return f"📉 {change_pct}%"
+    else:
+        return "➡️ 0%"
+
+def generate_insights_with_comparison(current_df, comparison_df):
+    current_summary = generate_summary_stats(current_df)
+    comparison_summary = generate_summary_stats(comparison_df)
     
-    if df.empty:
+    # Calculate trends
+    trends = {}
+    for key in current_summary:
+        if key in comparison_summary:
+            change_pct = calculate_percentage_change(current_summary[key], comparison_summary[key])
+            trends[key] = {
+                'current': current_summary[key],
+                'previous': comparison_summary[key],
+                'change_pct': change_pct,
+                'trend': format_trend_indicator(change_pct)
+            }
+    
+    if current_df.empty:
         return {
-            'summary': summary,
-            'summary_trends': {},
+            'summary': current_summary,
+            'summary_trends': trends,
             'highlights': [
                 {'metric': '📊 Status', 'campaign': 'No Data', 'value': 'No campaigns found', 'trend': '', 'change': 0}
             ],
-            'campaigns': []
+            'campaigns': [],
+            'comparison_available': not comparison_df.empty
         }
     
     highlights = []
     
-    if df['clicks'].sum() > 0:
-        most_clicks_idx = df['clicks'].idxmax()
-        most_clicks = df.loc[most_clicks_idx]
+    # Most clicks with comparison
+    if current_df['clicks'].sum() > 0:
+        most_clicks_idx = current_df['clicks'].idxmax()
+        most_clicks = current_df.loc[most_clicks_idx]
+        campaign_name = str(most_clicks['campaign'])[:30]
+        
+        # Find same campaign in comparison data
+        trend = ""
+        if not comparison_df.empty:
+            comp_campaign = comparison_df[comparison_df['campaign'] == most_clicks['campaign']]
+            if not comp_campaign.empty:
+                prev_clicks = comp_campaign['clicks'].iloc[0]
+                change_pct = calculate_percentage_change(most_clicks['clicks'], prev_clicks)
+                trend = format_trend_indicator(change_pct)
+        
         highlights.append({
             'metric': '🥇 Most Clicks',
-            'campaign': str(most_clicks['campaign'])[:30],
+            'campaign': campaign_name,
             'value': f"{int(most_clicks['clicks']):,}",
-            'trend': '',
+            'trend': trend,
             'change': 0
         })
     
-    if df['impressions'].sum() > 0:
-        most_impressions_idx = df['impressions'].idxmax()
-        most_impressions = df.loc[most_impressions_idx]
+    # Most impressions with comparison
+    if current_df['impressions'].sum() > 0:
+        most_impressions_idx = current_df['impressions'].idxmax()
+        most_impressions = current_df.loc[most_impressions_idx]
+        campaign_name = str(most_impressions['campaign'])[:30]
+        
+        trend = ""
+        if not comparison_df.empty:
+            comp_campaign = comparison_df[comparison_df['campaign'] == most_impressions['campaign']]
+            if not comp_campaign.empty:
+                prev_impressions = comp_campaign['impressions'].iloc[0]
+                change_pct = calculate_percentage_change(most_impressions['impressions'], prev_impressions)
+                trend = format_trend_indicator(change_pct)
+        
         highlights.append({
             'metric': '👁️ Most Impressions',
-            'campaign': str(most_impressions['campaign'])[:30],
+            'campaign': campaign_name,
             'value': f"{int(most_impressions['impressions']):,}",
-            'trend': '',
+            'trend': trend,
             'change': 0
         })
     
-    if df['ctr'].sum() > 0:
-        best_ctr_idx = df['ctr'].idxmax()
-        best_ctr = df.loc[best_ctr_idx]
+    # Best CTR with comparison
+    if current_df['ctr'].sum() > 0:
+        best_ctr_idx = current_df['ctr'].idxmax()
+        best_ctr = current_df.loc[best_ctr_idx]
+        campaign_name = str(best_ctr['campaign'])[:30]
+        
+        trend = ""
+        if not comparison_df.empty:
+            comp_campaign = comparison_df[comparison_df['campaign'] == best_ctr['campaign']]
+            if not comp_campaign.empty:
+                prev_ctr = comp_campaign['ctr'].iloc[0]
+                change_pct = calculate_percentage_change(best_ctr['ctr'], prev_ctr)
+                trend = format_trend_indicator(change_pct)
+        
         highlights.append({
             'metric': '🎯 Best CTR',
-            'campaign': str(best_ctr['campaign'])[:30],
+            'campaign': campaign_name,
             'value': f"{best_ctr['ctr']:.2f}%",
-            'trend': '',
+            'trend': trend,
             'change': 0
         })
     
     if not highlights:
         highlights = [
-            {'metric': '📊 Status', 'campaign': 'Data Available', 'value': f'{len(df)} campaigns', 'trend': '', 'change': 0}
+            {'metric': '📊 Status', 'campaign': 'Data Available', 'value': f'{len(current_df)} campaigns', 'trend': '', 'change': 0}
         ]
     
     return {
-        'summary': summary,
-        'summary_trends': {},
+        'summary': current_summary,
+        'summary_trends': trends,
         'highlights': highlights,
-        'campaigns': df.to_dict('records')
+        'campaigns': current_df.to_dict('records'),
+        'comparison_available': not comparison_df.empty
     }
 
 def create_enhanced_charts(df):
@@ -401,19 +424,20 @@ def fetch_sheet_data():
         
         if df_all.empty:
             print("❌ No data loaded from sheet")
-            return create_processed_empty_dataframe(), generate_insights(create_processed_empty_dataframe())
+            return create_processed_empty_dataframe(), generate_insights_with_comparison(create_processed_empty_dataframe(), create_processed_empty_dataframe())
         
         df_all_mapped = clean_and_map_columns(df_all)
         
-        # Try today first, then yesterday if no today data
-        today_df = filter_for_date(df_all_mapped, today)
+        # Get current and comparison data
+        current_df, comparison_df = get_date_range_data(df_all_mapped, today, days_back=7)
         
-        if today_df.empty:
+        # If no data for today, try yesterday
+        if current_df.empty:
             print(f"⚠️ No data for today ({today}), trying yesterday")
             yesterday = today - datetime.timedelta(days=1)
-            today_df = filter_for_date(df_all_mapped, yesterday)
+            current_df, comparison_df = get_date_range_data(df_all_mapped, yesterday, days_back=7)
             
-            if today_df.empty:
+            if current_df.empty:
                 print(f"⚠️ No data for yesterday ({yesterday}) either, using latest available")
                 # Use the most recent data available
                 if 'date' in df_all_mapped.columns:
@@ -421,28 +445,32 @@ def fetch_sheet_data():
                     df_all_mapped = df_all_mapped.dropna(subset=['date_parsed'])
                     if not df_all_mapped.empty:
                         latest_date = df_all_mapped['date_parsed'].max().date()
-                        today_df = filter_for_date(df_all_mapped, latest_date)
+                        current_df, comparison_df = get_date_range_data(df_all_mapped, latest_date, days_back=7)
                         print(f"📅 Using latest available date: {latest_date}")
         
-        if today_df.empty:
+        if current_df.empty:
             print("❌ Still no data found")
-            return create_processed_empty_dataframe(), generate_insights(create_processed_empty_dataframe())
+            return create_processed_empty_dataframe(), generate_insights_with_comparison(create_processed_empty_dataframe(), create_processed_empty_dataframe())
         
         # Process the data
-        today_df = add_kpis(today_df)
+        current_df = add_kpis(current_df)
+        comparison_df = add_kpis(comparison_df) if not comparison_df.empty else comparison_df
         
         # Save data
         os.makedirs(DATA_DIR, exist_ok=True)
-        today_df.to_csv(f"{DATA_DIR}/ads_{today.strftime('%Y-%m-%d')}.csv", index=False)
+        current_df.to_csv(f"{DATA_DIR}/ads_{today.strftime('%Y-%m-%d')}.csv", index=False)
         
         # Create charts
-        create_enhanced_charts(today_df)
+        create_enhanced_charts(current_df)
         
-        # Generate insights
-        insights = generate_insights(today_df)
+        # Generate insights with comparison
+        insights = generate_insights_with_comparison(current_df, comparison_df)
         
-        print(f"✅ Successfully processed {len(today_df)} campaigns")
-        return today_df, insights
+        print(f"✅ Successfully processed {len(current_df)} campaigns")
+        if not comparison_df.empty:
+            print(f"📊 Comparison data available for {len(comparison_df)} campaigns")
+        
+        return current_df, insights
         
     except Exception as e:
         print(f"❌ Error in fetch_sheet_data: {e}")
