@@ -12,105 +12,195 @@ SHEET_ID = "1rBjY6_AeDIG-1UEp3JvA44CKLAqn3JAGFttixkcRaKg"
 SHEET_NAME = "Daily Ad Group Performance Report"
 
 def load_campaign_data():
-    # Load service account from base64 environment variable
-    b64_key = os.getenv("GOOGLE_CREDENTIALS_B64")
-    if not b64_key:
-        raise ValueError("Missing GOOGLE_CREDENTIALS_B64 environment variable")
+    try:
+        # Load service account from base64 environment variable
+        b64_key = os.getenv("GOOGLE_CREDENTIALS_B64")
+        if not b64_key:
+            raise ValueError("Missing GOOGLE_CREDENTIALS_B64 environment variable")
 
-    key_data = base64.b64decode(b64_key).decode("utf-8")
-    creds_dict = json.loads(key_data)
+        key_data = base64.b64decode(b64_key).decode("utf-8")
+        creds_dict = json.loads(key_data)
 
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
 
-    # Load sheet data
-    sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
-    data = sheet.get_all_records(head=2)
-    df = pd.DataFrame(data)
-    
-    print(f"📊 Loaded {len(df)} rows from Google Sheets")
-    print(f"🔍 Columns found: {list(df.columns)}")
+        # Load sheet data
+        print(f"📋 Connecting to Google Sheets: {SHEET_ID}")
+        sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
+        
+        # Get all data starting from row 2 (skip header row 1)
+        all_data = sheet.get_all_values()
+        print(f"📊 Raw data loaded: {len(all_data)} rows")
+        
+        if len(all_data) < 2:
+            raise ValueError("No data found in sheet (need at least header + 1 data row)")
+        
+        # Use row 2 as headers (your actual headers)
+        headers = all_data[1]  # Row 2 contains the real headers
+        data_rows = all_data[2:]  # Data starts from row 3
+        
+        print(f"🔍 Headers found: {headers}")
+        print(f"📝 Data rows: {len(data_rows)}")
+        
+        # Create DataFrame
+        df = pd.DataFrame(data_rows, columns=headers)
+        
+        # Remove completely empty rows
+        df = df.dropna(how='all')
+        
+        # Clean column names - remove extra spaces and normalize
+        df.columns = [str(col).strip() for col in df.columns]
+        print(f"📋 Cleaned columns: {list(df.columns)}")
+        
+        # Show first few rows for debugging
+        print(f"🔍 First 3 rows of data:")
+        for i, row in df.head(3).iterrows():
+            print(f"   Row {i}: {dict(row)}")
+        
+        return df
+        
+    except Exception as e:
+        print(f"❌ Error in load_campaign_data: {e}")
+        print(f"🔍 Full error details: {str(e)}")
+        raise
 
-    # Clean column names
-    df.columns = [col.strip().lower().replace(' ', '_') for col in df.columns]
+def clean_and_map_columns(df):
+    """Clean and map columns to standard names with extensive debugging"""
+    print(f"🔧 Starting column mapping...")
+    print(f"📋 Original columns: {list(df.columns)}")
     
-    # Map your actual columns to standard names
-    column_mapping = {
-        'date': 'date',
-        'campaign_name': 'campaign',
-        'impressions': 'impressions', 
-        'clicks': 'clicks',
-        'ctr': 'ctr_raw',
-        'conversions': 'conversions',
-        'average_target_cpa_micros': 'target_cpa_micros',
-        'search_impression_share': 'impression_share'
-    }
+    # Create a mapping dictionary - be very flexible with column names
+    column_mapping = {}
     
-    # Rename columns
-    for old_name, new_name in column_mapping.items():
-        if old_name in df.columns:
-            df = df.rename(columns={old_name: new_name})
+    for col in df.columns:
+        col_lower = str(col).lower().strip()
+        
+        # Map to standard names
+        if 'date' in col_lower:
+            column_mapping[col] = 'date'
+        elif 'campaign' in col_lower and 'name' in col_lower:
+            column_mapping[col] = 'campaign'
+        elif col_lower == 'impressions':
+            column_mapping[col] = 'impressions'
+        elif col_lower == 'clicks':
+            column_mapping[col] = 'clicks'
+        elif 'ctr' in col_lower:
+            column_mapping[col] = 'ctr_raw'
+        elif 'conversion' in col_lower and 'micros' not in col_lower:
+            column_mapping[col] = 'conversions'
+        elif 'impression' in col_lower and 'share' in col_lower:
+            column_mapping[col] = 'impression_share'
+        elif 'cost' in col_lower or 'spend' in col_lower:
+            column_mapping[col] = 'spend'
     
-    # Filter for today's date only (most recent data)
+    print(f"🗺️ Column mapping: {column_mapping}")
+    
+    # Apply mapping
+    df_mapped = df.rename(columns=column_mapping)
+    
+    # Ensure we have required columns
+    required_cols = ['campaign', 'impressions', 'clicks']
+    missing_cols = [col for col in required_cols if col not in df_mapped.columns]
+    
+    if missing_cols:
+        print(f"❌ Missing required columns: {missing_cols}")
+        print(f"📋 Available columns after mapping: {list(df_mapped.columns)}")
+        
+        # Try to find columns with similar names
+        for missing_col in missing_cols:
+            for orig_col in df.columns:
+                if missing_col.lower() in str(orig_col).lower():
+                    print(f"💡 Found similar column '{orig_col}' for '{missing_col}'")
+                    df_mapped[missing_col] = df[orig_col]
+                    break
+    
+    print(f"✅ Final columns: {list(df_mapped.columns)}")
+    return df_mapped
+
+def add_kpis(df):
+    """Add KPIs with extensive error handling and debugging"""
+    print(f"🧮 Starting KPI calculations...")
+    print(f"📊 DataFrame shape: {df.shape}")
+    
+    # Filter for most recent date and valid campaigns
     if 'date' in df.columns:
-        # Convert date column to datetime
+        # Remove empty dates
+        df = df[df['date'].notna() & (df['date'] != '')]
+        
+        if len(df) == 0:
+            print("⚠️ No rows with valid dates found")
+            return create_empty_dataframe()
+        
+        # Convert date and get latest
         df['date'] = pd.to_datetime(df['date'], errors='coerce')
-        # Get the most recent date's data
+        df = df.dropna(subset=['date'])
+        
+        if len(df) == 0:
+            print("⚠️ No rows with valid date formats found")
+            return create_empty_dataframe()
+        
         latest_date = df['date'].max()
         df = df[df['date'] == latest_date]
         print(f"📅 Using data from: {latest_date.strftime('%Y-%m-%d')}")
     
-    # Remove empty rows
-    df = df.dropna(subset=['campaign'])
-    df = df[df['campaign'].str.strip() != '']
+    # Filter for valid campaigns
+    if 'campaign' in df.columns:
+        df = df[df['campaign'].notna() & (df['campaign'] != '')]
+        
+    if len(df) == 0:
+        print("⚠️ No valid campaign data found")
+        return create_empty_dataframe()
     
-    print(f"✅ Final dataset: {len(df)} campaigns")
-    return df
-
-def add_kpis(df):
-    # Clean and convert numeric columns
-    numeric_columns = ['clicks', 'impressions', 'conversions']
+    print(f"📊 Working with {len(df)} campaigns")
+    
+    # Clean numeric columns with extensive debugging
+    numeric_columns = ['impressions', 'clicks', 'conversions']
     
     for col in numeric_columns:
         if col in df.columns:
-            # Convert to string first, then clean
-            df[col] = df[col].astype(str).str.replace(r'[€$,]', '', regex=True)
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            print(f"🔢 Processing column '{col}'...")
+            original_values = df[col].head(3).tolist()
+            print(f"   Original values: {original_values}")
+            
+            # Convert to string, remove common characters, then to numeric
+            df[col] = df[col].astype(str)
+            df[col] = df[col].str.replace(r'[€$,%]', '', regex=True)
+            df[col] = df[col].str.replace(',', '')  # Remove thousands separators
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = df[col].fillna(0)
+            
+            cleaned_values = df[col].head(3).tolist()
+            print(f"   Cleaned values: {cleaned_values}")
+        else:
+            print(f"⚠️ Column '{col}' not found, setting to 0")
+            df[col] = 0
     
-    # Clean CTR (remove % sign if present)
+    # Handle CTR specifically
     if 'ctr_raw' in df.columns:
+        print(f"🎯 Processing CTR...")
         df['ctr_raw'] = df['ctr_raw'].astype(str).str.replace('%', '').str.replace('€', '')
         df['ctr'] = pd.to_numeric(df['ctr_raw'], errors='coerce').fillna(0)
+        print(f"   CTR values: {df['ctr'].head(3).tolist()}")
     else:
-        # Calculate CTR if not provided
+        print(f"🧮 Calculating CTR from impressions and clicks...")
         df['ctr'] = ((df['clicks'] / df['impressions']) * 100).round(2)
-        df['ctr'] = df['ctr'].fillna(0)
+        df['ctr'] = df['ctr'].replace([float('inf'), -float('inf')], 0).fillna(0)
     
-    # Clean impression share
-    if 'impression_share' in df.columns:
-        df['impression_share'] = df['impression_share'].astype(str).str.replace('%', '')
-        df['impression_share'] = pd.to_numeric(df['impression_share'], errors='coerce').fillna(0)
-    else:
-        df['impression_share'] = 75.0  # Default value
-    
-    # CALCULATE ESTIMATED SPEND based on industry averages
-    # Since you don't have spend data, we'll estimate it
-    print("⚠️ No spend data found - calculating estimates based on industry averages")
-    
-    # Estimate CPC based on campaign type and performance
-    def estimate_cpc(row):
-        campaign_name = str(row['campaign']).lower()
-        if 'search' in campaign_name:
-            return 0.25  # Search campaigns typically €0.15-0.35
-        elif 'performance max' in campaign_name or 'pmax' in campaign_name:
-            return 0.18  # Performance Max typically €0.12-0.25  
-        elif 'demand gen' in campaign_name or 'display' in campaign_name:
-            return 0.05  # Display/Demand Gen typically €0.03-0.08
+    # Estimate spend (since you don't have real spend data)
+    print(f"💰 Estimating spend based on campaign types...")
+    def estimate_cpc(campaign_name):
+        campaign_lower = str(campaign_name).lower()
+        if 'search' in campaign_lower:
+            return 0.25
+        elif 'performance max' in campaign_lower or 'pmax' in campaign_lower:
+            return 0.18
+        elif 'demand gen' in campaign_lower or 'display' in campaign_lower:
+            return 0.05
         else:
-            return 0.20  # Default
+            return 0.20
     
-    df['cpc'] = df.apply(estimate_cpc, axis=1)
+    df['cpc'] = df['campaign'].apply(estimate_cpc)
     df['spend'] = (df['clicks'] * df['cpc']).round(2)
     
     # Calculate other KPIs
@@ -120,57 +210,55 @@ def add_kpis(df):
     df['cost_per_conversion'] = (df['spend'] / df['conversions']).round(2)
     df['cost_per_conversion'] = df['cost_per_conversion'].replace([float('inf'), -float('inf')], 0).fillna(0)
     
-    # Add quality score placeholder
-    df['quality_score'] = 7.5
+    # Handle impression share
+    if 'impression_share' in df.columns:
+        df['impression_share'] = df['impression_share'].astype(str).str.replace('%', '')
+        df['impression_share'] = pd.to_numeric(df['impression_share'], errors='coerce').fillna(75.0)
+    else:
+        df['impression_share'] = 75.0
     
-    print("💰 Spend estimates calculated based on industry benchmarks")
-    return df
-
-def get_yesterday_file(today):
-    yesterday = today - datetime.timedelta(days=1)
-    filename = f"{DATA_DIR}/ads_{yesterday.strftime('%Y-%m-%d')}.csv"
-    return filename if os.path.exists(filename) else None
-
-def add_trend_arrows(df, prev_df):
-    if prev_df.empty:
-        return df
-        
-    merged = df.merge(prev_df, on="campaign", suffixes=("", "_prev"))
+    df['quality_score'] = 7.5  # Placeholder
     
-    trend_columns = ['clicks', 'spend', 'impressions', 'ctr', 'cpc', 'conversions', 'conversion_rate']
-    
-    for col in trend_columns:
-        if col in df.columns:
-            trend_col = f"{col}_trend"
-            df[trend_col] = ""
-            df[f"{col}_change"] = 0
-            
-            for idx, row in merged.iterrows():
-                today_val = row[col] if not pd.isna(row[col]) else 0
-                yest_val = row[f"{col}_prev"] if not pd.isna(row[f"{col}_prev"]) else 0
-                
-                if yest_val == 0:
-                    arrow = "🆕" if today_val > 0 else ""
-                    change = 0
-                elif today_val > yest_val:
-                    arrow = "⬆️"
-                    change = round(((today_val - yest_val) / yest_val) * 100, 1)
-                elif today_val < yest_val:
-                    arrow = "⬇️"
-                    change = round(((today_val - yest_val) / yest_val) * 100, 1)
-                else:
-                    arrow = "➡️"
-                    change = 0
-                
-                campaign_mask = df['campaign'] == row['campaign']
-                df.loc[campaign_mask, trend_col] = arrow
-                df.loc[campaign_mask, f"{col}_change"] = change
+    print(f"✅ KPI calculations completed")
+    print(f"📊 Final data summary:")
+    print(f"   Total impressions: {df['impressions'].sum():,.0f}")
+    print(f"   Total clicks: {df['clicks'].sum():,.0f}")
+    print(f"   Estimated spend: €{df['spend'].sum():.2f}")
+    print(f"   Average CTR: {df['ctr'].mean():.2f}%")
     
     return df
+
+def create_empty_dataframe():
+    """Create an empty dataframe with required columns"""
+    return pd.DataFrame({
+        'campaign': [],
+        'impressions': [],
+        'clicks': [],
+        'ctr': [],
+        'spend': [],
+        'cpc': [],
+        'conversions': [],
+        'conversion_rate': [],
+        'cost_per_conversion': [],
+        'impression_share': [],
+        'quality_score': []
+    })
 
 def generate_summary_stats(df):
-    """Generate overall summary statistics"""
-    summary = {
+    """Generate summary stats with safety checks"""
+    if df.empty:
+        return {
+            'total_spend': 0,
+            'total_clicks': 0,
+            'total_impressions': 0,
+            'total_conversions': 0,
+            'avg_ctr': 0,
+            'avg_cpc': 0,
+            'avg_conversion_rate': 0,
+            'avg_impression_share': 0
+        }
+    
+    return {
         'total_spend': round(df['spend'].sum(), 2),
         'total_clicks': int(df['clicks'].sum()),
         'total_impressions': int(df['impressions'].sum()),
@@ -180,98 +268,119 @@ def generate_summary_stats(df):
         'avg_conversion_rate': round(df['conversion_rate'].mean(), 2),
         'avg_impression_share': round(df['impression_share'].mean(), 1)
     }
-    return summary
 
 def generate_insights(df):
-    """Generate insights with your actual data structure"""
+    """Generate insights with safety checks"""
+    print(f"🔍 Generating insights...")
+    
     if df.empty:
-        print("⚠️ No data to generate insights")
+        print("⚠️ No data available for insights")
         return {
-            'summary': {'total_spend': 0, 'total_clicks': 0, 'total_impressions': 0, 'total_conversions': 0, 'avg_ctr': 0, 'avg_cpc': 0, 'avg_conversion_rate': 0},
-            'highlights': [],
+            'summary': generate_summary_stats(df),
+            'highlights': [
+                {'metric': '📊 Status', 'campaign': 'No Data', 'value': 'No campaigns found', 'trend': '', 'change': 0}
+            ],
             'campaigns': []
         }
     
-    # Find best performers
-    most_clicks_idx = df['clicks'].idxmax() if df['clicks'].sum() > 0 else 0
-    most_impressions_idx = df['impressions'].idxmax() if df['impressions'].sum() > 0 else 0
-    best_ctr_idx = df['ctr'].idxmax() if df['ctr'].sum() > 0 else 0
-    best_conversion_rate_idx = df['conversion_rate'].idxmax() if df['conversion_rate'].sum() > 0 else 0
-    highest_impression_share_idx = df['impression_share'].idxmax() if df['impression_share'].sum() > 0 else 0
-    
-    most_clicks = df.iloc[most_clicks_idx]
-    most_impressions = df.iloc[most_impressions_idx] 
-    best_ctr = df.iloc[best_ctr_idx]
-    best_conversion_rate = df.iloc[best_conversion_rate_idx]
-    highest_impression_share = df.iloc[highest_impression_share_idx]
-    
-    # Generate summary stats
+    # Generate summary
     summary = generate_summary_stats(df)
     
-    # Create insights
-    insights_data = {
+    # Find top performers safely
+    highlights = []
+    
+    if df['clicks'].sum() > 0:
+        most_clicks_idx = df['clicks'].idxmax()
+        most_clicks = df.iloc[most_clicks_idx]
+        highlights.append({
+            'metric': '🥇 Most Clicks',
+            'campaign': str(most_clicks['campaign'])[:30],
+            'value': f"{int(most_clicks['clicks']):,}",
+            'trend': '',
+            'change': 0
+        })
+    
+    if df['impressions'].sum() > 0:
+        most_impressions_idx = df['impressions'].idxmax()
+        most_impressions = df.iloc[most_impressions_idx]
+        highlights.append({
+            'metric': '👁️ Most Impressions',
+            'campaign': str(most_impressions['campaign'])[:30],
+            'value': f"{int(most_impressions['impressions']):,}",
+            'trend': '',
+            'change': 0
+        })
+    
+    if df['ctr'].sum() > 0:
+        best_ctr_idx = df['ctr'].idxmax()
+        best_ctr = df.iloc[best_ctr_idx]
+        highlights.append({
+            'metric': '🎯 Best CTR',
+            'campaign': str(best_ctr['campaign'])[:30],
+            'value': f"{best_ctr['ctr']:.2f}%",
+            'trend': '',
+            'change': 0
+        })
+    
+    if df['conversions'].sum() > 0:
+        best_conv_idx = df['conversion_rate'].idxmax()
+        best_conv = df.iloc[best_conv_idx]
+        highlights.append({
+            'metric': '🔄 Best Conv. Rate',
+            'campaign': str(best_conv['campaign'])[:30],
+            'value': f"{best_conv['conversion_rate']:.2f}%",
+            'trend': '',
+            'change': 0
+        })
+    
+    # Add impression share highlight
+    if len(highlights) < 5:
+        best_imp_share_idx = df['impression_share'].idxmax()
+        best_imp_share = df.iloc[best_imp_share_idx]
+        highlights.append({
+            'metric': '📊 Best Imp. Share',
+            'campaign': str(best_imp_share['campaign'])[:30],
+            'value': f"{best_imp_share['impression_share']:.1f}%",
+            'trend': '',
+            'change': 0
+        })
+    
+    if not highlights:
+        highlights = [
+            {'metric': '📊 Status', 'campaign': 'Data Available', 'value': f'{len(df)} campaigns', 'trend': '', 'change': 0}
+        ]
+    
+    print(f"✅ Generated {len(highlights)} highlights")
+    
+    return {
         'summary': summary,
-        'highlights': [
-            {
-                'metric': '🥇 Most Clicks',
-                'campaign': most_clicks['campaign'][:30],
-                'value': f"{int(most_clicks['clicks']):,}",
-                'trend': most_clicks.get('clicks_trend', ''),
-                'change': most_clicks.get('clicks_change', 0)
-            },
-            {
-                'metric': '👁️ Most Impressions', 
-                'campaign': most_impressions['campaign'][:30],
-                'value': f"{int(most_impressions['impressions']):,}",
-                'trend': most_impressions.get('impressions_trend', ''),
-                'change': most_impressions.get('impressions_change', 0)
-            },
-            {
-                'metric': '🎯 Best CTR',
-                'campaign': best_ctr['campaign'][:30],
-                'value': f"{best_ctr['ctr']:.2f}%",
-                'trend': best_ctr.get('ctr_trend', ''),
-                'change': best_ctr.get('ctr_change', 0)
-            },
-            {
-                'metric': '🔄 Best Conv. Rate',
-                'campaign': best_conversion_rate['campaign'][:30],
-                'value': f"{best_conversion_rate['conversion_rate']:.2f}%",
-                'trend': best_conversion_rate.get('conversion_rate_trend', ''),
-                'change': best_conversion_rate.get('conversion_rate_change', 0)
-            },
-            {
-                'metric': '📊 Best Imp. Share',
-                'campaign': highest_impression_share['campaign'][:30],
-                'value': f"{highest_impression_share['impression_share']:.1f}%",
-                'trend': '',
-                'change': 0
-            }
-        ],
+        'highlights': highlights,
         'campaigns': df.to_dict('records')
     }
-    
-    return insights_data
 
 def create_enhanced_charts(df):
-    """Create charts with your actual data"""
+    """Create charts with safety checks"""
+    print(f"📊 Creating charts...")
     os.makedirs("static", exist_ok=True)
     
     if df.empty:
         # Create placeholder chart
         plt.figure(figsize=(10, 6))
-        plt.text(0.5, 0.5, 'No data available', ha='center', va='center', fontsize=16)
+        plt.text(0.5, 0.5, 'No data available\nCheck your Google Sheets connection', 
+                ha='center', va='center', fontsize=16, 
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
         plt.xlim(0, 1)
         plt.ylim(0, 1)
         plt.axis('off')
+        plt.title("Google Ads Spend Overview", fontsize=14, fontweight='bold')
         plt.savefig("static/spend_chart.png", dpi=150, bbox_inches='tight')
         plt.close()
+        print("📊 Created placeholder chart")
         return
     
-    # Truncate campaign names for display
-    campaigns = [name[:20] + "..." if len(name) > 20 else name for name in df['campaign']]
-    
     # Create spend chart
+    campaigns = [str(name)[:15] + "..." if len(str(name)) > 15 else str(name) for name in df['campaign']]
+    
     plt.figure(figsize=(12, 6))
     bars = plt.bar(campaigns, df['spend'], color='#667eea', alpha=0.8)
     plt.title("Estimated Daily Spend by Campaign", fontsize=14, fontweight='bold', pad=20)
@@ -287,77 +396,38 @@ def create_enhanced_charts(df):
     plt.tight_layout()
     plt.savefig("static/spend_chart.png", dpi=150, bbox_inches='tight')
     plt.close()
-    
-    # Create performance overview chart
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle('Google Ads Performance Dashboard', fontsize=16, fontweight='bold')
-    
-    # 1. Clicks by Campaign
-    ax1.bar(campaigns, df['clicks'], color='#28a745', alpha=0.8)
-    ax1.set_title('Clicks by Campaign', fontweight='bold')
-    ax1.set_ylabel('Clicks')
-    ax1.tick_params(axis='x', rotation=45)
-    
-    # 2. CTR by Campaign  
-    ax2.barh(campaigns, df['ctr'], color='#ffc107', alpha=0.8)
-    ax2.set_title('Click-Through Rate by Campaign', fontweight='bold')
-    ax2.set_xlabel('CTR (%)')
-    
-    # 3. Impressions vs Clicks
-    ax3.scatter(df['impressions'], df['clicks'], s=100, alpha=0.7, color='#dc3545')
-    ax3.set_title('Impressions vs Clicks', fontweight='bold')
-    ax3.set_xlabel('Impressions')
-    ax3.set_ylabel('Clicks')
-    
-    # 4. Conversion Rate by Campaign
-    if df['conversions'].sum() > 0:
-        ax4.bar(campaigns, df['conversion_rate'], color='#17a2b8', alpha=0.8)
-        ax4.set_title('Conversion Rate by Campaign', fontweight='bold')
-        ax4.set_ylabel('Conversion Rate (%)')
-        ax4.tick_params(axis='x', rotation=45)
-    else:
-        ax4.text(0.5, 0.5, 'No conversions data', ha='center', va='center', transform=ax4.transAxes)
-        ax4.set_title('Conversion Rate by Campaign', fontweight='bold')
-    
-    plt.tight_layout()
-    plt.savefig("static/dashboard.png", dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    print("📊 Charts created successfully")
+    print("📊 Created spend chart successfully")
 
 def fetch_sheet_data():
+    """Main function with comprehensive error handling"""
     try:
+        print(f"🚀 Starting Google Ads data fetch...")
+        
+        # Load and process data
+        df_raw = load_campaign_data()
+        df_mapped = clean_and_map_columns(df_raw)
+        df_final = add_kpis(df_mapped)
+        
+        # Save data for trend analysis
         today = datetime.date.today()
-        print(f"🚀 Starting data fetch for {today}")
-        
-        df = load_campaign_data()
-        df = add_kpis(df)
-
         os.makedirs(DATA_DIR, exist_ok=True)
+        df_final.to_csv(f"{DATA_DIR}/ads_{today.strftime('%Y-%m-%d')}.csv", index=False)
+        print(f"💾 Data saved for future trend analysis")
         
-        # Load previous day's data for trend analysis
-        yesterday_file = get_yesterday_file(today)
-        if yesterday_file and os.path.exists(yesterday_file):
-            print("📈 Loading previous day data for trends")
-            prev_df = pd.read_csv(yesterday_file)
-            prev_df = add_kpis(prev_df)
-            df = add_trend_arrows(df, prev_df)
-        else:
-            print("ℹ️ No previous day data found - skipping trend analysis")
-
-        # Save current data
-        df.to_csv(f"{DATA_DIR}/ads_{today.strftime('%Y-%m-%d')}.csv", index=False)
-        print(f"💾 Data saved to {DATA_DIR}/ads_{today.strftime('%Y-%m-%d')}.csv")
-
         # Create charts
-        create_enhanced_charts(df)
+        create_enhanced_charts(df_final)
         
         # Generate insights
-        insights = generate_insights(df)
+        insights = generate_insights(df_final)
         
-        print("✅ Data processing completed successfully")
-        return df, insights
+        print(f"✅ Data fetch completed successfully!")
+        print(f"📊 Processed {len(df_final)} campaigns with {insights['summary']['total_clicks']} total clicks")
+        
+        return df_final, insights
         
     except Exception as e:
-        print(f"❌ Error in fetch_sheet_data: {e}")
+        print(f"❌ Critical error in fetch_sheet_data: {e}")
+        import traceback
+        print(f"🔍 Full traceback:")
+        traceback.print_exc()
         raise
