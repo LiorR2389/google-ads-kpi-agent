@@ -31,13 +31,41 @@ def send_report_email(html_body, image_path):
     else:
         print(f"⚠️ Warning: Image file not found at {image_path}")
 
-    # Send email
-    try:
-        # Use SMTP_SSL for port 465, or SMTP with starttls() for port 587
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(os.getenv("EMAIL_USER"), os.getenv("EMAIL_PASSWORD"))
-            server.send_message(msg)
-            print("✅ Email sent successfully.")
-    except Exception as e:
-        print(f"❌ Failed to send email: {e}")
-        raise
+    # Send email with fallback options
+    email_user = os.getenv("EMAIL_USER")
+    email_password = os.getenv("EMAIL_PASSWORD")
+    
+    if not email_user or not email_password:
+        print("❌ Missing EMAIL_USER or EMAIL_PASSWORD environment variables")
+        return
+    
+    # Try multiple SMTP configurations
+    smtp_configs = [
+        ("smtp.gmail.com", 587, "starttls"),  # TLS on port 587
+        ("smtp.gmail.com", 465, "ssl"),       # SSL on port 465
+    ]
+    
+    for host, port, method in smtp_configs:
+        try:
+            print(f"🔄 Attempting SMTP connection to {host}:{port} using {method}")
+            
+            if method == "ssl":
+                with smtplib.SMTP_SSL(host, port) as server:
+                    server.login(email_user, email_password)
+                    server.send_message(msg)
+                    print("✅ Email sent successfully via SSL")
+                    return
+            else:  # starttls
+                with smtplib.SMTP(host, port) as server:
+                    server.starttls()
+                    server.login(email_user, email_password)
+                    server.send_message(msg)
+                    print("✅ Email sent successfully via STARTTLS")
+                    return
+                    
+        except Exception as e:
+            print(f"❌ Failed with {host}:{port} ({method}): {e}")
+            continue
+    
+    print("❌ All SMTP methods failed")
+    raise Exception("Unable to send email with any SMTP configuration")
