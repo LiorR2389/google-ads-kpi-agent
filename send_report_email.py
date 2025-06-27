@@ -1,24 +1,18 @@
-import os
 import smtplib
 from email.message import EmailMessage
-from email.utils import formataddr
+import os
+import smtplib
 
-def send_report_email(html_body, image_path):
+def send_report_email(to, subject, body, attachment_path):
     msg = EmailMessage()
-    msg['Subject'] = '📊 Google Ads Daily KPI Report'
-    msg['From'] = formataddr(('KPI Bot', os.getenv('EMAIL_USER')))
-    msg['To'] = os.getenv('EMAIL_TO')
-    msg.set_content("Your daily KPI report is attached.")
-    msg.add_alternative(html_body, subtype='html')
+    msg['Subject'] = subject
+    msg['From'] = os.getenv("EMAIL_USER")
+    msg['To'] = to
+    msg.set_content(body)
 
-    # Attach spend_chart.png
-    if os.path.exists(image_path):
-        with open(image_path, 'rb') as f:
-            img_data = f.read()
-        msg.add_attachment(img_data, maintype='image', subtype='png', filename='spend_chart.png')
+    with open(attachment_path, 'rb') as f:
+        msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename='weekly_report.pdf')
 
-    with smtplib.SMTP(os.getenv("EMAIL_HOST"), int(os.getenv("EMAIL_PORT"))) as server:
-        server.starttls()
-        server.login(os.getenv("EMAIL_USER"), os.getenv("EMAIL_PASSWORD"))
-        server.send_message(msg)
-        print("✅ Email sent successfully.")
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(os.getenv("EMAIL_USER"), os.getenv("EMAIL_PASSWORD"))
+        smtp.send_message(msg)
