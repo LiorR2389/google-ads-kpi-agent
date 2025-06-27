@@ -1,6 +1,6 @@
 from flask import Flask, request
 from google_ads_api import fetch_sheet_data
-from send_email import send_report_email
+from send_report_email import send_report_email
 import os
 
 app = Flask(__name__)
