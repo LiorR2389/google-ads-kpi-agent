@@ -1,10 +1,9 @@
 from flask import Flask, request
 from google_ads_api import fetch_sheet_data
+from send_email import send_report_email
 import os
 
 app = Flask(__name__)
-
-# Cache for insights
 last_insights = ""
 report_ready = False
 
@@ -36,9 +35,11 @@ def trigger():
     df, insights = fetch_sheet_data()
     last_insights = insights
     report_ready = True
-    return "✅ Report updated successfully"
 
+    # send email
+    send_report_email(insights, "static/spend_chart.png")
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    return "✅ Report updated and emailed successfully"
+
+if __name__ == "__main__":
+    app.run(debug=True)
