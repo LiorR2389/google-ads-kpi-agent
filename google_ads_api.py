@@ -49,7 +49,7 @@ def load_campaign_data():
         if data_start_row > 0:
             headers = all_data[data_start_row - 1]
         else:
-            headers = ['Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions', 'Average Target Cpa Micros', 'Search Impression Share']
+            headers = ['Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions', 'Search Impression Share', 'Cost Per Conversion']
         
         data_rows = all_data[data_start_row:]
         
@@ -90,8 +90,8 @@ def create_empty_dataframe():
         'Clicks': [],
         'Ctr': [],
         'Conversions': [],
-        'Average Target Cpa Micros': [],
-        'Search Impression Share': []
+        'Search Impression Share': [],
+        'Cost Per Conversion': []
     })
 
 def clean_and_map_columns(df):
@@ -113,10 +113,12 @@ def clean_and_map_columns(df):
             column_mapping[col] = 'clicks'
         elif 'ctr' in col_lower:
             column_mapping[col] = 'ctr_raw'
-        elif 'conversion' in col_lower and 'micros' not in col_lower:
+        elif 'conversion' in col_lower and ('cost' in col_lower or 'per' in col_lower):
+            column_mapping[col] = 'cost_per_conversion'
+        elif 'conversion' in col_lower:
             column_mapping[col] = 'conversions'
         elif 'impression' in col_lower and 'share' in col_lower:
-            column_mapping[col] = 'impression_share'
+            column_mapping[col] = 'search_impression_share'
     
     print(f"🗺️ Column mapping: {column_mapping}")
     
@@ -125,6 +127,141 @@ def clean_and_map_columns(df):
     
     return df_mapped
 
+def clean_numeric_value(value):
+    """Clean numeric values from strings, percentages, currency symbols"""
+    if pd.isna(value) or value == '':
+        return 0
+    
+    # Convert to string and clean
+    str_val = str(value).strip()
+    
+    # Remove currency symbols, commas, and other non-numeric characters
+    str_val = str_val.replace('€', '').replace('', '').replace(',', '').replace('%', '')
+    
+    # Try to convert to float
+    try:
+        return float(str_val)
+    except (ValueError, TypeError):
+        return 0
+
+def get_last_4_weeks():
+    """Get the last 4 weeks date ranges (Monday to Sunday)"""
+    today = datetime.date.today()
+    
+    # Find the most recent Monday
+    days_since_monday = today.weekday()
+    last_monday = today - datetime.timedelta(days=days_since_monday)
+    
+    weeks = []
+    for i in range(4):
+        week_start = last_monday - datetime.timedelta(weeks=i)
+        week_end = week_start + datetime.timedelta(days=6)
+        weeks.append((week_start, week_end))
+    
+    return weeks
+
+def fetch_weekly_comparison_data():
+    """Fetch and organize data for weekly comparison view"""
+    try:
+        print("🚀 Starting weekly comparison data fetch...")
+        
+        # Load all data from sheet
+        df_all = load_campaign_data()
+        
+        if df_all.empty:
+            print("❌ No data loaded from sheet")
+            return {"campaigns": {}, "weeks": []}
+        
+        df_all_mapped = clean_and_map_columns(df_all)
+        
+        # Clean and parse dates
+        if 'date' not in df_all_mapped.columns:
+            print("❌ No date column found")
+            return {"campaigns": {}, "weeks": []}
+        
+        df_copy = df_all_mapped.copy()
+        df_copy = df_copy[df_copy['date'].notna() & (df_copy['date'] != '')]
+        df_copy['date_parsed'] = pd.to_datetime(df_copy['date'], errors='coerce')
+        df_copy = df_copy.dropna(subset=['date_parsed'])
+        
+        if len(df_copy) == 0:
+            print("❌ No valid dates found")
+            return {"campaigns": {}, "weeks": []}
+        
+        # Get last 4 weeks
+        weeks = get_last_4_weeks()
+        print(f"📅 Analyzing weeks: {[f'{w[0]} to {w[1]}' for w in weeks]}")
+        
+        # Group data by campaign and week
+        campaigns_data = {}
+        week_labels = []
+        
+        for week_start, week_end in weeks:
+            week_label = f"{week_start} to {week_end}"
+            week_labels.append(week_label)
+            
+            # Filter data for this week
+            week_data = df_copy[
+                (df_copy['date_parsed'].dt.date >= week_start) & 
+                (df_copy['date_parsed'].dt.date <= week_end)
+            ]
+            
+            print(f"📊 Week {week_label}: {len(week_data)} rows")
+            
+            if not week_data.empty:
+                # Group by campaign and aggregate
+                for campaign in week_data['campaign'].unique():
+                    if pd.isna(campaign) or campaign == '':
+                        continue
+                        
+                    campaign_week_data = week_data[week_data['campaign'] == campaign]
+                    
+                    if campaign not in campaigns_data:
+                        campaigns_data[campaign] = {}
+                    
+                    # Aggregate the week's data for this campaign
+                    total_impressions = sum(clean_numeric_value(x) for x in campaign_week_data.get('impressions', []))
+                    total_clicks = sum(clean_numeric_value(x) for x in campaign_week_data.get('clicks', []))
+                    
+                    # Calculate CTR
+                    ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+                    
+                    # Get other metrics (take average or sum as appropriate)
+                    conversions = sum(clean_numeric_value(x) for x in campaign_week_data.get('conversions', []))
+                    
+                    # For percentages, take average
+                    search_imp_share_values = [clean_numeric_value(x) for x in campaign_week_data.get('search_impression_share', []) if clean_numeric_value(x) > 0]
+                    search_imp_share = sum(search_imp_share_values) / len(search_imp_share_values) if search_imp_share_values else 0
+                    
+                    cost_per_conv_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_per_conversion', []) if clean_numeric_value(x) > 0]
+                    cost_per_conversion = sum(cost_per_conv_values) / len(cost_per_conv_values) if cost_per_conv_values else 0
+                    
+                    campaigns_data[campaign][week_label] = {
+                        'impressions': int(total_impressions),
+                        'clicks': int(total_clicks),
+                        'ctr': round(ctr, 2),
+                        'conversions': conversions,
+                        'search_impression_share': round(search_imp_share, 2) if search_imp_share > 0 else '—',
+                        'cost_per_conversion': round(cost_per_conversion, 2) if cost_per_conversion > 0 else '—'
+                    }
+        
+        print(f"✅ Processed {len(campaigns_data)} campaigns across {len(week_labels)} weeks")
+        
+        # Sort weeks chronologically (most recent first)
+        week_labels.reverse()
+        
+        return {
+            "campaigns": campaigns_data,
+            "weeks": week_labels
+        }
+        
+    except Exception as e:
+        print(f"❌ Error in fetch_weekly_comparison_data: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"campaigns": {}, "weeks": []}
+
+# Keep the original functions for backward compatibility
 def get_date_range_data(df_all, target_date, days_back=7):
     """Get data for target date and comparison period (e.g., previous week)"""
     if df_all.empty or 'date' not in df_all.columns:
@@ -210,11 +347,11 @@ def add_kpis(df):
     df['cost_per_conversion'] = df['cost_per_conversion'].replace([float('inf'), -float('inf')], 0).fillna(0)
     
     # Handle impression share
-    if 'impression_share' in df.columns:
-        df['impression_share'] = df['impression_share'].astype(str).str.replace('%', '')
-        df['impression_share'] = pd.to_numeric(df['impression_share'], errors='coerce').fillna(75.0)
+    if 'search_impression_share' in df.columns:
+        df['search_impression_share'] = df['search_impression_share'].astype(str).str.replace('%', '')
+        df['search_impression_share'] = pd.to_numeric(df['search_impression_share'], errors='coerce').fillna(75.0)
     else:
-        df['impression_share'] = 75.0
+        df['search_impression_share'] = 75.0
     
     df['quality_score'] = 7.5
     
@@ -231,7 +368,7 @@ def create_processed_empty_dataframe():
         'conversions': [],
         'conversion_rate': [],
         'cost_per_conversion': [],
-        'impression_share': [],
+        'search_impression_share': [],
         'quality_score': []
     })
 
@@ -256,7 +393,7 @@ def generate_summary_stats(df):
         'avg_ctr': round(df['ctr'].mean(), 2),
         'avg_cpc': round(df['cpc'].mean(), 2),
         'avg_conversion_rate': round(df['conversion_rate'].mean(), 2),
-        'avg_impression_share': round(df['impression_share'].mean(), 1)
+        'avg_impression_share': round(df['search_impression_share'].mean(), 1)
     }
 
 def calculate_percentage_change(current, previous):
