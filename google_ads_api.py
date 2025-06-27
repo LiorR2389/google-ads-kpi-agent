@@ -105,31 +105,34 @@ def clean_and_map_columns(df):
     print(f"🗺️ Column mapping applied: {column_mapping}")
     return df_mapped
 
-def add_kpis(df):
-    if df.empty:
+def get_date_data(df, target_date):
+    """Get data for a specific date"""
+    if df.empty or 'date' not in df.columns:
         return create_processed_empty_dataframe()
     
-    # Filter for most recent date
-    if 'date' in df.columns:
-        df = df[df['date'].notna() & (df['date'] != '')]
-        if len(df) == 0:
-            return create_processed_empty_dataframe()
-        
-        df['date'] = pd.to_datetime(df['date'], errors='coerce')
-        df = df.dropna(subset=['date'])
-        
-        if len(df) == 0:
-            return create_processed_empty_dataframe()
-        
-        latest_date = df['date'].max()
-        df = df[df['date'] == latest_date]
-        print(f"📅 Using data from: {latest_date.strftime('%Y-%m-%d')}")
+    df_copy = df.copy()
+    df_copy = df_copy[df_copy['date'].notna() & (df_copy['date'] != '')]
+    
+    if len(df_copy) == 0:
+        return create_processed_empty_dataframe()
+    
+    df_copy['date'] = pd.to_datetime(df_copy['date'], errors='coerce')
+    df_copy = df_copy.dropna(subset=['date'])
+    
+    if len(df_copy) == 0:
+        return create_processed_empty_dataframe()
+    
+    # Filter for target date
+    df_filtered = df_copy[df_copy['date'].dt.date == target_date]
     
     # Filter for valid campaigns
-    if 'campaign' in df.columns:
-        df = df[df['campaign'].notna() & (df['campaign'] != '')]
+    if 'campaign' in df_filtered.columns:
+        df_filtered = df_filtered[df_filtered['campaign'].notna() & (df_filtered['campaign'] != '')]
     
-    if len(df) == 0:
+    return df_filtered
+
+def add_kpis(df):
+    if df.empty:
         return create_processed_empty_dataframe()
     
     # Clean numeric columns
@@ -180,7 +183,6 @@ def add_kpis(df):
     
     df['quality_score'] = 7.5
     
-    print(f"✅ Processed {len(df)} campaigns")
     return df
 
 def create_processed_empty_dataframe():
@@ -197,6 +199,60 @@ def create_processed_empty_dataframe():
         'impression_share': [],
         'quality_score': []
     })
+
+def calculate_trends(today_df, yesterday_df):
+    """Calculate trends between today and yesterday"""
+    if today_df.empty:
+        return today_df
+    
+    if yesterday_df.empty:
+        # No yesterday data, add empty trend columns
+        for col in ['clicks', 'impressions', 'spend', 'ctr', 'conversions']:
+            today_df[f'{col}_trend'] = '🆕'
+            today_df[f'{col}_change'] = 0
+        return today_df
+    
+    # Merge today and yesterday data
+    merged = today_df.merge(yesterday_df, on='campaign', suffixes=('', '_prev'), how='left')
+    
+    # Calculate trends for key metrics
+    trend_columns = ['clicks', 'impressions', 'spend', 'ctr', 'conversions']
+    
+    for col in trend_columns:
+        trend_col = f'{col}_trend'
+        change_col = f'{col}_change'
+        
+        today_df[trend_col] = ''
+        today_df[change_col] = 0
+        
+        for idx, row in merged.iterrows():
+            today_val = row[col] if pd.notna(row[col]) else 0
+            yesterday_val = row[f'{col}_prev'] if pd.notna(row[f'{col}_prev']) else 0
+            
+            if yesterday_val == 0:
+                if today_val > 0:
+                    arrow = '🆕'
+                    change = 0
+                else:
+                    arrow = ''
+                    change = 0
+            else:
+                change_pct = ((today_val - yesterday_val) / yesterday_val) * 100
+                
+                if change_pct > 5:
+                    arrow = '⬆️'
+                elif change_pct < -5:
+                    arrow = '⬇️'
+                else:
+                    arrow = '➡️'
+                
+                change = round(change_pct, 1)
+            
+            campaign_mask = today_df['campaign'] == row['campaign']
+            today_df.loc[campaign_mask, trend_col] = arrow
+            today_df.loc[campaign_mask, change_col] = change
+    
+    return today_df
 
 def generate_summary_stats(df):
     if df.empty:
@@ -222,12 +278,50 @@ def generate_summary_stats(df):
         'avg_impression_share': round(df['impression_share'].mean(), 1)
     }
 
-def generate_insights(df):
+def calculate_summary_trends(today_summary, yesterday_summary):
+    """Calculate trends for summary statistics"""
+    trends = {}
+    
+    metrics = ['total_spend', 'total_clicks', 'total_impressions', 'avg_ctr', 'avg_cpc']
+    
+    for metric in metrics:
+        today_val = today_summary[metric]
+        yesterday_val = yesterday_summary[metric]
+        
+        if yesterday_val == 0:
+            if today_val > 0:
+                trends[f'{metric}_trend'] = '🆕'
+                trends[f'{metric}_change'] = 0
+            else:
+                trends[f'{metric}_trend'] = ''
+                trends[f'{metric}_change'] = 0
+        else:
+            change_pct = ((today_val - yesterday_val) / yesterday_val) * 100
+            
+            if change_pct > 5:
+                trends[f'{metric}_trend'] = '⬆️'
+            elif change_pct < -5:
+                trends[f'{metric}_trend'] = '⬇️'
+            else:
+                trends[f'{metric}_trend'] = '➡️'
+            
+            trends[f'{metric}_change'] = round(change_pct, 1)
+    
+    return trends
+
+def generate_insights(df, yesterday_df=None):
     summary = generate_summary_stats(df)
+    
+    # Calculate summary trends if yesterday data exists
+    summary_trends = {}
+    if yesterday_df is not None and not yesterday_df.empty:
+        yesterday_summary = generate_summary_stats(yesterday_df)
+        summary_trends = calculate_summary_trends(summary, yesterday_summary)
     
     if df.empty:
         return {
             'summary': summary,
+            'summary_trends': summary_trends,
             'highlights': [
                 {'metric': '📊 Status', 'campaign': 'No Data', 'value': 'No campaigns found', 'trend': '', 'change': 0}
             ],
@@ -243,8 +337,8 @@ def generate_insights(df):
             'metric': '🥇 Most Clicks',
             'campaign': str(most_clicks['campaign'])[:30],
             'value': f"{int(most_clicks['clicks']):,}",
-            'trend': '',
-            'change': 0
+            'trend': most_clicks.get('clicks_trend', ''),
+            'change': most_clicks.get('clicks_change', 0)
         })
     
     if df['impressions'].sum() > 0:
@@ -254,8 +348,8 @@ def generate_insights(df):
             'metric': '👁️ Most Impressions',
             'campaign': str(most_impressions['campaign'])[:30],
             'value': f"{int(most_impressions['impressions']):,}",
-            'trend': '',
-            'change': 0
+            'trend': most_impressions.get('impressions_trend', ''),
+            'change': most_impressions.get('impressions_change', 0)
         })
     
     if df['ctr'].sum() > 0:
@@ -265,8 +359,8 @@ def generate_insights(df):
             'metric': '🎯 Best CTR',
             'campaign': str(best_ctr['campaign'])[:30],
             'value': f"{best_ctr['ctr']:.2f}%",
-            'trend': '',
-            'change': 0
+            'trend': best_ctr.get('ctr_trend', ''),
+            'change': best_ctr.get('ctr_change', 0)
         })
     
     if df['conversions'].sum() > 0:
@@ -276,8 +370,8 @@ def generate_insights(df):
             'metric': '🔄 Best Conv. Rate',
             'campaign': str(best_conv['campaign'])[:30],
             'value': f"{best_conv['conversion_rate']:.2f}%",
-            'trend': '',
-            'change': 0
+            'trend': best_conv.get('conversion_rate_trend', ''),
+            'change': best_conv.get('conversion_rate_change', 0)
         })
     
     if len(highlights) < 5:
@@ -298,6 +392,7 @@ def generate_insights(df):
     
     return {
         'summary': summary,
+        'summary_trends': summary_trends,
         'highlights': highlights,
         'campaigns': df.to_dict('records')
     }
@@ -335,19 +430,46 @@ def create_enhanced_charts(df):
 
 def fetch_sheet_data():
     try:
-        df_raw = load_campaign_data()
-        df_mapped = clean_and_map_columns(df_raw)
-        df_final = add_kpis(df_mapped)
-        
         today = datetime.date.today()
+        yesterday = today - datetime.timedelta(days=1)
+        
+        print(f"📅 Fetching data for today: {today}")
+        print(f"📅 Looking for yesterday data: {yesterday}")
+        
+        # Load all data from sheet
+        df_all = load_campaign_data()
+        df_all_mapped = clean_and_map_columns(df_all)
+        
+        # Get today's data
+        today_df = get_date_data(df_all_mapped, today)
+        today_df = add_kpis(today_df)
+        
+        # Get yesterday's data
+        yesterday_df = get_date_data(df_all_mapped, yesterday)
+        yesterday_df = add_kpis(yesterday_df)
+        
+        print(f"📊 Today: {len(today_df)} campaigns")
+        print(f"📊 Yesterday: {len(yesterday_df)} campaigns")
+        
+        # Calculate trends
+        if not yesterday_df.empty:
+            today_df = calculate_trends(today_df, yesterday_df)
+            print("📈 Trends calculated successfully")
+        else:
+            print("⚠️ No yesterday data found - skipping trends")
+        
+        # Save data
         os.makedirs(DATA_DIR, exist_ok=True)
-        df_final.to_csv(f"{DATA_DIR}/ads_{today.strftime('%Y-%m-%d')}.csv", index=False)
+        today_df.to_csv(f"{DATA_DIR}/ads_{today.strftime('%Y-%m-%d')}.csv", index=False)
         
-        create_enhanced_charts(df_final)
-        insights = generate_insights(df_final)
+        # Create charts
+        create_enhanced_charts(today_df)
         
-        print(f"✅ Successfully processed {len(df_final)} campaigns")
-        return df_final, insights
+        # Generate insights with trends
+        insights = generate_insights(today_df, yesterday_df)
+        
+        print(f"✅ Successfully processed with trends")
+        return today_df, insights
         
     except Exception as e:
         print(f"❌ Error in fetch_sheet_data: {e}")
