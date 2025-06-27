@@ -92,29 +92,47 @@ def format_weekly_comparison_for_web(weekly_data):
                 elif curr_clicks < prev_clicks:
                     trend_class = "style='background: linear-gradient(90deg, #f8d7da, #f8f9fa);'"
             
+            # Format numbers properly
+            impressions = week_data.get('impressions', '—')
+            impressions_formatted = f"{impressions:,}" if isinstance(impressions, (int, float)) else str(impressions)
+            
+            clicks = week_data.get('clicks', '—')
+            clicks_formatted = f"{clicks:,}" if isinstance(clicks, (int, float)) else str(clicks)
+            
+            ctr = week_data.get('ctr', '—')
+            ctr_formatted = f"{ctr}%" if ctr != '—' else '—'
+            
+            conversions = week_data.get('conversions', '—')
+            
+            search_share = week_data.get('search_impression_share', '—')
+            search_share_formatted = f"{search_share}%" if search_share != '—' else '—'
+            
+            cost_conv = week_data.get('cost_per_conversion', '—')
+            cost_conv_formatted = f"€{cost_conv}" if cost_conv != '—' else '—'
+
             html += f"""
-                            <tr {trend_class if not trend_class == "" else f"style='background-color: {bg_color};'"}>
+                            <tr {trend_class if trend_class else f"style='background-color: {bg_color};'"}>
                                 <td style="padding: 12px; font-weight: 500; border-bottom: 1px solid #e9ecef;">
                                     <div style="font-weight: bold; color: #333;">{week_label}</div>
                                     <div style="font-size: 11px; color: #666;">{week}</div>
                                 </td>
                                 <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    {week_data.get('impressions', '—'):,} if isinstance(week_data.get('impressions', '—'), (int, float)) else week_data.get('impressions', '—')
+                                    {impressions_formatted}
                                 </td>
                                 <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500; color: #667eea;">
-                                    {week_data.get('clicks', '—'):,} if isinstance(week_data.get('clicks', '—'), (int, float)) else week_data.get('clicks', '—')
+                                    {clicks_formatted}
                                 </td>
                                 <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    {week_data.get('ctr', '—')}% if week_data.get('ctr', '—') != '—' else '—'
+                                    {ctr_formatted}
                                 </td>
                                 <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    {week_data.get('conversions', '—')}
+                                    {conversions}
                                 </td>
                                 <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    {week_data.get('search_impression_share', '—')}% if week_data.get('search_impression_share', '—') != '—' else '—'
+                                    {search_share_formatted}
                                 </td>
                                 <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    €{week_data.get('cost_per_conversion', '—')} if week_data.get('cost_per_conversion', '—') != '—' else '—'
+                                    {cost_conv_formatted}
                                 </td>
                             </tr>
             """
