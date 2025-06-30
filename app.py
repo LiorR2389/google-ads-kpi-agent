@@ -39,8 +39,11 @@ def format_weekly_comparison_for_web(weekly_data):
                 <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
     """
     
-    for i, week in enumerate(weeks):
-        week_label = f"Week {i+1}" if i > 0 else "This Week"
+    # Reverse the weeks list so the most recent week is actually "This Week"
+    weeks_corrected = list(reversed(weeks))
+    
+    for i, week in enumerate(weeks_corrected):
+        week_label = f"This Week" if i == 0 else f"Week {i+1}"
         html += f"""
                     <div style="background: #e7f3ff; padding: 10px 20px; border-radius: 8px; border-left: 4px solid #0066cc;">
                         <div style="font-weight: bold; color: #0066cc;">{week_label}</div>
@@ -52,9 +55,6 @@ def format_weekly_comparison_for_web(weekly_data):
                 </div>
             </div>
     """
-    
-    # Reverse the weeks list so the most recent week is actually "This Week"
-    weeks_corrected = list(reversed(weeks))
     
     # Generate one big transposed table (weeks as rows, campaigns as columns)
     html += f"""
@@ -72,7 +72,7 @@ def format_weekly_comparison_for_web(weekly_data):
     
     # Campaign headers
     for campaign_name in campaigns.keys():
-        html += f"<th colspan='6' style='padding: 15px; text-align: center; font-weight: 600; border-right: 1px solid #495057;'>{campaign_name[:30]}{'...' if len(campaign_name) > 30 else ''}</th>"
+        html += f"<th colspan='7' style='padding: 15px; text-align: center; font-weight: 600; border-right: 1px solid #495057;'>{campaign_name[:30]}{'...' if len(campaign_name) > 30 else ''}</th>"
     
     html += """
                         </tr>
@@ -88,6 +88,7 @@ def format_weekly_comparison_for_web(weekly_data):
             <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Conv.</th>
             <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Impr.Shr</th>
             <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Cost/Conv</th>
+            <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Cost Micros</th>
         """
     
     html += """
@@ -152,6 +153,9 @@ def format_weekly_comparison_for_web(weekly_data):
             cost_conv = week_data.get('cost_per_conversion', '—')
             cost_conv_formatted = f"€{cost_conv}" if cost_conv != '—' else '—'
             
+            cost_micros = week_data.get('cost_micros', '—')
+            cost_micros_formatted = f"€{cost_micros}" if cost_micros != '—' else '—'
+            
             html += f"""
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{impressions_formatted}</td>
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px; color: #667eea; font-weight: bold;">{clicks_formatted}</td>
@@ -159,6 +163,7 @@ def format_weekly_comparison_for_web(weekly_data):
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{conversions}</td>
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{search_share_formatted}</td>
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{cost_conv_formatted}</td>
+                            <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{cost_micros_formatted}</td>
             """
         
         html += """
@@ -341,7 +346,7 @@ def trigger():
                 <ol style="color: #721c24; padding-left: 20px;">
                     <li>Check that your Google Sheets has data for the last 4 weeks</li>
                     <li>Verify your GOOGLE_CREDENTIALS_B64 environment variable is set</li>
-                    <li>Make sure your sheet has the required columns: Date, Campaign Name, Impressions, Clicks, CTR, Conversions, Search Impression Share, Cost Per Conversion</li>
+                    <li>Make sure your sheet has the required columns: Date, Campaign Name, Impressions, Clicks, CTR, Conversions, Search Impression Share, Cost Per Conversion, Cost Micros</li>
                     <li>Ensure dates are in YYYY-MM-DD format</li>
                     <li>Check that there's data for multiple weeks</li>
                 </ol>

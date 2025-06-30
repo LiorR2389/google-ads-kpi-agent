@@ -49,7 +49,7 @@ def load_campaign_data():
         if data_start_row > 0:
             headers = all_data[data_start_row - 1]
         else:
-            headers = ['Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions', 'Search Impression Share', 'Cost Per Conversion']
+            headers = ['Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions', 'Search Impression Share', 'Cost Per Conversion', 'Cost Micros']
         
         data_rows = all_data[data_start_row:]
         
@@ -91,7 +91,8 @@ def create_empty_dataframe():
         'Ctr': [],
         'Conversions': [],
         'Search Impression Share': [],
-        'Cost Per Conversion': []
+        'Cost Per Conversion': [],
+        'Cost Micros': []
     })
 
 def clean_and_map_columns(df):
@@ -119,6 +120,8 @@ def clean_and_map_columns(df):
             column_mapping[col] = 'conversions'
         elif 'impression' in col_lower and 'share' in col_lower:
             column_mapping[col] = 'search_impression_share'
+        elif 'cost' in col_lower and 'micro' in col_lower:
+            column_mapping[col] = 'cost_micros'
     
     print(f"🗺️ Column mapping: {column_mapping}")
     
@@ -236,13 +239,18 @@ def fetch_weekly_comparison_data():
                     cost_per_conv_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_per_conversion', []) if clean_numeric_value(x) > 0]
                     cost_per_conversion = sum(cost_per_conv_values) / len(cost_per_conv_values) if cost_per_conv_values else 0
                     
+                    # Handle cost micros
+                    cost_micros_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_micros', []) if clean_numeric_value(x) > 0]
+                    cost_micros = sum(cost_micros_values) / len(cost_micros_values) if cost_micros_values else 0
+                    
                     campaigns_data[campaign][week_label] = {
                         'impressions': int(total_impressions),
                         'clicks': int(total_clicks),
                         'ctr': round(ctr, 2),
                         'conversions': conversions,
                         'search_impression_share': round(search_imp_share, 2) if search_imp_share > 0 else '—',
-                        'cost_per_conversion': round(cost_per_conversion, 2) if cost_per_conversion > 0 else '—'
+                        'cost_per_conversion': round(cost_per_conversion, 2) if cost_per_conversion > 0 else '—',
+                        'cost_micros': round(cost_micros, 2) if cost_micros > 0 else '—'
                     }
         
         print(f"✅ Processed {len(campaigns_data)} campaigns across {len(week_labels)} weeks")
@@ -369,7 +377,8 @@ def create_processed_empty_dataframe():
         'conversion_rate': [],
         'cost_per_conversion': [],
         'search_impression_share': [],
-        'quality_score': []
+        'quality_score': [],
+        'cost_micros': []
     })
 
 def generate_summary_stats(df):
