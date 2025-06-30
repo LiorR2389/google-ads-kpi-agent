@@ -53,44 +53,86 @@ def format_weekly_comparison_for_web(weekly_data):
             </div>
     """
     
-    # Generate table for each campaign
-    for campaign_name, campaign_data in campaigns.items():
+    # Reverse the weeks list so the most recent week is actually "This Week"
+    weeks_corrected = list(reversed(weeks))
+    
+    # Generate one big transposed table (weeks as rows, campaigns as columns)
+    html += f"""
+        <div style="margin-bottom: 40px;">
+            <h3 style="color: #333; margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-left: 4px solid #667eea; border-radius: 0 8px 8px 0;">
+                📈 All Campaigns Weekly Comparison
+            </h3>
+            
+            <div style="overflow-x: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-radius: 12px;">
+                <table style="width: 100%; border-collapse: collapse; background: white; min-width: 1200px;">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #343a40, #495057); color: white;">
+                            <th rowspan="2" style="padding: 15px; text-align: left; font-weight: 600; min-width: 120px; border-right: 2px solid #495057;">Week</th>
+    """
+    
+    # Campaign headers
+    for campaign_name in campaigns.keys():
+        html += f"<th colspan='6' style='padding: 15px; text-align: center; font-weight: 600; border-right: 1px solid #495057;'>{campaign_name[:30]}{'...' if len(campaign_name) > 30 else ''}</th>"
+    
+    html += """
+                        </tr>
+                        <tr style="background: linear-gradient(135deg, #495057, #6c757d); color: white;">
+    """
+    
+    # Metric subheaders for each campaign
+    for _ in campaigns.keys():
+        html += """
+            <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Impr.</th>
+            <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Clicks</th>
+            <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>CTR</th>
+            <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Conv.</th>
+            <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Impr.Shr</th>
+            <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Cost/Conv</th>
+        """
+    
+    html += """
+                        </tr>
+                    </thead>
+                    <tbody>
+    """
+    
+    # Generate rows for each week
+    for i, week in enumerate(weeks_corrected):
+        bg_color = "#f8f9fa" if i % 2 == 0 else "white"
+        week_label = f"This Week" if i == 0 else f"Week {i+1}"
+        
+        # Calculate trend class for the whole row
+        trend_class = ""
+        if i > 0:
+            # Compare with previous week for any campaign improvements
+            has_improvement = False
+            has_decline = False
+            for campaign_name, campaign_data in campaigns.items():
+                curr_week_data = campaign_data.get(week, {})
+                prev_week_data = campaign_data.get(weeks_corrected[i-1], {})
+                curr_clicks = curr_week_data.get('clicks', 0)
+                prev_clicks = prev_week_data.get('clicks', 0)
+                if curr_clicks > prev_clicks:
+                    has_improvement = True
+                elif curr_clicks < prev_clicks:
+                    has_decline = True
+            
+            if has_improvement and not has_decline:
+                trend_class = "style='background: linear-gradient(90deg, #d4f3d0, #f8f9fa);'"
+            elif has_decline and not has_improvement:
+                trend_class = "style='background: linear-gradient(90deg, #f8d7da, #f8f9fa);'"
+        
         html += f"""
-            <div style="margin-bottom: 40px;">
-                <h3 style="color: #333; margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-left: 4px solid #667eea; border-radius: 0 8px 8px 0;">
-                    📈 {campaign_name}
-                </h3>
-                
-                <div style="overflow-x: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-radius: 12px;">
-                    <table style="width: 100%; border-collapse: collapse; background: white;">
-                        <thead>
-                            <tr style="background: linear-gradient(135deg, #343a40, #495057); color: white;">
-                                <th style="padding: 15px; text-align: left; font-weight: 600; min-width: 100px;">Week</th>
-                                <th style="padding: 15px; text-align: center; font-weight: 600; min-width: 100px;">Impressions</th>
-                                <th style="padding: 15px; text-align: center; font-weight: 600; min-width: 80px;">Clicks</th>
-                                <th style="padding: 15px; text-align: center; font-weight: 600; min-width: 80px;">CTR</th>
-                                <th style="padding: 15px; text-align: center; font-weight: 600; min-width: 100px;">Conversions</th>
-                                <th style="padding: 15px; text-align: center; font-weight: 600; min-width: 120px;">Search Impr. Share</th>
-                                <th style="padding: 15px; text-align: center; font-weight: 600; min-width: 120px;">Cost/Conversion</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                        <tr {trend_class if trend_class else f"style='background-color: {bg_color};'"}>
+                            <td style="padding: 12px; font-weight: 500; border-bottom: 1px solid #e9ecef; border-right: 2px solid #e9ecef;">
+                                <div style="font-weight: bold; color: #333;">{week_label}</div>
+                                <div style="font-size: 11px; color: #666;">{week}</div>
+                            </td>
         """
         
-        for i, week in enumerate(weeks):
+        # Add data for each campaign in this week
+        for campaign_name, campaign_data in campaigns.items():
             week_data = campaign_data.get(week, {})
-            bg_color = "#f8f9fa" if i % 2 == 0 else "white"
-            week_label = f"Week {i+1}" if i > 0 else "This Week"
-            
-            # Calculate trend indicators
-            trend_class = ""
-            if i > 0 and week in campaign_data and weeks[i-1] in campaign_data:
-                prev_clicks = campaign_data[weeks[i-1]].get('clicks', 0)
-                curr_clicks = week_data.get('clicks', 0)
-                if curr_clicks > prev_clicks:
-                    trend_class = "style='background: linear-gradient(90deg, #d4f3d0, #f8f9fa);'"
-                elif curr_clicks < prev_clicks:
-                    trend_class = "style='background: linear-gradient(90deg, #f8d7da, #f8f9fa);'"
             
             # Format numbers properly
             impressions = week_data.get('impressions', '—')
@@ -109,40 +151,26 @@ def format_weekly_comparison_for_web(weekly_data):
             
             cost_conv = week_data.get('cost_per_conversion', '—')
             cost_conv_formatted = f"€{cost_conv}" if cost_conv != '—' else '—'
-
+            
             html += f"""
-                            <tr {trend_class if trend_class else f"style='background-color: {bg_color};'"}>
-                                <td style="padding: 12px; font-weight: 500; border-bottom: 1px solid #e9ecef;">
-                                    <div style="font-weight: bold; color: #333;">{week_label}</div>
-                                    <div style="font-size: 11px; color: #666;">{week}</div>
-                                </td>
-                                <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    {impressions_formatted}
-                                </td>
-                                <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500; color: #667eea;">
-                                    {clicks_formatted}
-                                </td>
-                                <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    {ctr_formatted}
-                                </td>
-                                <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    {conversions}
-                                </td>
-                                <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    {search_share_formatted}
-                                </td>
-                                <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef; font-weight: 500;">
-                                    {cost_conv_formatted}
-                                </td>
-                            </tr>
+                            <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{impressions_formatted}</td>
+                            <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px; color: #667eea; font-weight: bold;">{clicks_formatted}</td>
+                            <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{ctr_formatted}</td>
+                            <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{conversions}</td>
+                            <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{search_share_formatted}</td>
+                            <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{cost_conv_formatted}</td>
             """
         
         html += """
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                        </tr>
         """
+    
+    html += """
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    """
     
     html += f"""
             <!-- Summary Section -->
@@ -161,8 +189,8 @@ def format_weekly_comparison_for_web(weekly_data):
                     </div>
                     <div style="text-align: center; background: white; padding: 15px; border-radius: 8px;">
                         <div style="font-size: 14px; color: #666; margin-bottom: 5px;">Data Period</div>
-                        <div style="font-size: 16px; font-weight: bold; color: #0066cc;">{weeks[-1] if weeks else 'N/A'}</div>
-                        <div style="font-size: 12px; color: #666;">to {weeks[0] if weeks else 'N/A'}</div>
+                        <div style="font-size: 16px; font-weight: bold; color: #0066cc;">{weeks_corrected[0] if weeks_corrected else 'N/A'}</div>
+                        <div style="font-size: 12px; color: #666;">to {weeks_corrected[-1] if weeks_corrected else 'N/A'}</div>
                     </div>
                 </div>
                 <div style="border-top: 1px solid #cce7ff; padding-top: 15px; margin-top: 15px;">

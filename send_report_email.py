@@ -100,15 +100,18 @@ def generate_weekly_comparison_html(weekly_data):
     campaigns = weekly_data.get('campaigns', {})
     weeks = weekly_data.get('weeks', [])
     
+    # Reverse the weeks list so the most recent week is actually "This Week"
+    weeks_corrected = list(reversed(weeks))
+    
     # Week headers
     week_headers = ""
-    for i, week in enumerate(weeks):
-        week_label = f"Week {i+1}" if i > 0 else "This Week"
+    for i, week in enumerate(weeks_corrected):
+        week_label = f"This Week" if i == 0 else f"Week {i+1}"
         week_headers += f"<th colspan='6' style='padding: 15px; text-align: center; background: #667eea; color: white; font-weight: 600;'>{week_label}<br><span style='font-size: 11px; opacity: 0.8;'>{week}</span></th>"
     
     # Subheaders for metrics
     metric_headers = ""
-    for _ in weeks:
+    for _ in weeks_corrected:
         metric_headers += """
             <th style='padding: 8px; text-align: center; background: #495057; color: white; font-size: 11px;'>Impr.</th>
             <th style='padding: 8px; text-align: center; background: #495057; color: white; font-size: 11px;'>Clicks</th>
@@ -124,7 +127,7 @@ def generate_weekly_comparison_html(weekly_data):
         bg_color = "#f8f9fa" if i % 2 == 0 else "white"
         
         week_cells = ""
-        for week in weeks:
+        for week in weeks_corrected:
             week_data = campaign_data.get(week, {})
             
             impressions = week_data.get('impressions', '—')
@@ -210,8 +213,8 @@ def generate_weekly_comparison_html(weekly_data):
                         </div>
                         <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
                             <div style="font-size: 14px; color: #666; margin-bottom: 5px;">Date Range</div>
-                            <div style="font-size: 12px; font-weight: bold; color: #0066cc;">{weeks[-1] if weeks else 'N/A'}</div>
-                            <div style="font-size: 12px; color: #666;">to {weeks[0] if weeks else 'N/A'}</div>
+                            <div style="font-size: 12px; font-weight: bold; color: #0066cc;">{weeks_corrected[0] if weeks_corrected else 'N/A'}</div>
+                            <div style="font-size: 12px; color: #666;">to {weeks_corrected[-1] if weeks_corrected else 'N/A'}</div>
                         </div>
                     </div>
                     <div style="border-top: 1px solid #cce7ff; padding-top: 15px; margin-top: 15px;">
@@ -253,13 +256,16 @@ def generate_weekly_comparison_text(weekly_data):
     campaigns = weekly_data.get('campaigns', {})
     weeks = weekly_data.get('weeks', [])
     
+    # Reverse the weeks list so the most recent week is actually "This Week"
+    weeks_corrected = list(reversed(weeks))
+    
     text = f"""
 Google Ads Weekly Comparison - {datetime.now().strftime('%B %d, %Y')}
 
 WEEKLY PERFORMANCE OVERVIEW:
 Campaigns analyzed: {len(campaigns)}
-Weeks compared: {len(weeks)}
-Date range: {weeks[-1] if weeks else 'N/A'} to {weeks[0] if weeks else 'N/A'}
+Weeks compared: {len(weeks_corrected)}
+Date range: {weeks_corrected[0] if weeks_corrected else 'N/A'} to {weeks_corrected[-1] if weeks_corrected else 'N/A'}
 
 CAMPAIGN DATA:
 """
@@ -268,8 +274,8 @@ CAMPAIGN DATA:
         text += f"\n{campaign_name}:\n"
         text += "-" * 50 + "\n"
         
-        for i, week in enumerate(weeks):
-            week_label = f"Week {i+1}" if i > 0 else "This Week"
+        for i, week in enumerate(weeks_corrected):
+            week_label = f"This Week" if i == 0 else f"Week {i+1}"
             week_data = campaign_data.get(week, {})
             
             impressions = week_data.get('impressions', '—')
@@ -279,6 +285,17 @@ CAMPAIGN DATA:
             
             # Format numbers properly
             impressions_formatted = f"{impressions:,}" if isinstance(impressions, (int, float)) else str(impressions)
+            clicks_formatted = f"{clicks:,}" if isinstance(clicks, (int, float)) else str(clicks)
+            ctr_formatted = f"{ctr}%" if ctr != '—' else '—'
+            
+            text += f"{week_label} ({week}):\n"
+            text += f"  Impressions: {impressions_formatted}\n"
+            text += f"  Clicks: {clicks_formatted}\n"
+            text += f"  CTR: {ctr_formatted}\n"
+            text += f"  Conversions: {conversions}\n"
+            impressions_formatted = f"{impressions:,}" if isinstance(impressions, (int, float)) else str(impressions)
+            clicks_formatted = f"{clicks:,}" if isinstance(clicks, (int, float)) else str(clicks)
+            ctr_formatted = f"{ctr}%" if ctr != '—' else '—'
             clicks_formatted = f"{clicks:,}" if isinstance(clicks, (int, float)) else str(clicks)
             ctr_formatted = f"{ctr}%" if ctr != '—' else '—'
             
