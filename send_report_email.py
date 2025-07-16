@@ -6,8 +6,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 
-def send_weekly_comparison_email(weekly_data):
-    """Send weekly comparison email with campaign data in table format"""
+def send_daily_comparison_email(daily_data):
+    """Send daily comparison email with campaign data in table format"""
     
     # Check environment variables
     email_user = os.getenv("EMAIL_USER")
@@ -22,22 +22,22 @@ def send_weekly_comparison_email(weekly_data):
         return
     
     try:
-        campaigns = weekly_data.get('campaigns', {})
-        weeks = weekly_data.get('weeks', [])
+        campaigns = daily_data.get('campaigns', {})
+        weeks = daily_data.get('weeks', [])
         
         if not campaigns or not weeks:
             print("❌ No campaign data to send")
             return
         
         # Create HTML email
-        html_content = generate_weekly_comparison_html(weekly_data)
+        html_content = generate_daily_comparison_html(daily_data)
         
         # Create plain text version
-        plain_text = generate_weekly_comparison_text(weekly_data)
+        plain_text = generate_daily_comparison_text(daily_data)
         
         # Create email message
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f"📊 Google Ads Weekly Comparison - {datetime.now().strftime('%b %d, %Y')}"
+        msg['Subject'] = f"📊 Google Ads Daily Comparison - {datetime.now().strftime('%b %d, %Y')}"
         msg['From'] = email_user
         msg['To'] = email_to
         
@@ -73,7 +73,7 @@ def send_weekly_comparison_email(weekly_data):
                 server.send_message(msg)
                 server.quit()
                 
-                print("✅ Weekly comparison email sent successfully!")
+                print("✅ Daily comparison email sent successfully!")
                 return
                 
             except smtplib.SMTPAuthenticationError as e:
@@ -95,10 +95,10 @@ def send_weekly_comparison_email(weekly_data):
         print(f"❌ Email preparation failed: {e}")
         raise
 
-def generate_weekly_comparison_html(weekly_data):
-    """Generate HTML email for weekly comparison"""
-    campaigns = weekly_data.get('campaigns', {})
-    weeks = weekly_data.get('weeks', [])
+def generate_daily_comparison_html(daily_data):
+    """Generate HTML email for daily comparison"""
+    campaigns = daily_data.get('campaigns', {})
+    weeks = daily_data.get('weeks', [])
     
     # Reverse the weeks list so the most recent week is actually "This Week"
     weeks_corrected = list(reversed(weeks))
@@ -176,11 +176,11 @@ def generate_weekly_comparison_html(weekly_data):
             
             <!-- Header -->
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
-                <h1 style="margin: 0; font-size: 24px;">📊 Google Ads Weekly Comparison</h1>
+                <h1 style="margin: 0; font-size: 24px;">📊 Google Ads Daily Comparison</h1>
                 <p style="margin: 10px 0 0 0; opacity: 0.9;">Last 4 Weeks Performance • {datetime.now().strftime('%B %d, %Y')}</p>
             </div>
             
-            <!-- Weekly Comparison Table -->
+            <!-- Daily Comparison Table -->
             <div style="padding: 30px;">
                 <h2 style="color: #333; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
                     📅 <span>Campaign Performance by Week</span>
@@ -223,7 +223,7 @@ def generate_weekly_comparison_html(weekly_data):
                     </div>
                     <div style="border-top: 1px solid #cce7ff; padding-top: 15px; margin-top: 15px;">
                         <p style="margin: 0; color: #0066cc; font-weight: 500; font-size: 14px;">
-                            💡 Use this weekly comparison to identify trends and optimize your campaigns. 
+                            💡 Use this daily comparison to identify trends and optimize your campaigns. 
                             Look for consistent performers and investigate any significant drops or spikes.
                         </p>
                     </div>
@@ -246,8 +246,8 @@ def generate_weekly_comparison_html(weekly_data):
             
             <!-- Footer -->
             <div style="background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #e9ecef;">
-                <p style="margin: 0;">🤖 Automated Google Ads Weekly Comparison • Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-                <p style="margin: 5px 0 0 0;">Weekly performance data for the last 4 weeks • Monitor trends to optimize campaign performance</p>
+                <p style="margin: 0;">🤖 Automated Google Ads Daily Comparison • Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p style="margin: 5px 0 0 0;">Daily performance data for the last 4 weeks • Monitor trends to optimize campaign performance</p>
             </div>
         </div>
     </body>
@@ -256,18 +256,18 @@ def generate_weekly_comparison_html(weekly_data):
     
     return html
 
-def generate_weekly_comparison_text(weekly_data):
-    """Generate plain text version of weekly comparison"""
-    campaigns = weekly_data.get('campaigns', {})
-    weeks = weekly_data.get('weeks', [])
+def generate_daily_comparison_text(daily_data):
+    """Generate plain text version of daily comparison"""
+    campaigns = daily_data.get('campaigns', {})
+    weeks = daily_data.get('weeks', [])
     
     # Reverse the weeks list so the most recent week is actually "This Week"
     weeks_corrected = list(reversed(weeks))
     
     text = f"""
-Google Ads Weekly Comparison - {datetime.now().strftime('%B %d, %Y')}
+Google Ads Daily Comparison - {datetime.now().strftime('%B %d, %Y')}
 
-WEEKLY PERFORMANCE OVERVIEW:
+DAILY PERFORMANCE OVERVIEW:
 Campaigns analyzed: {len(campaigns)}
 Weeks compared: {len(weeks_corrected)}
 Date range: {weeks_corrected[0] if weeks_corrected else 'N/A'} to {weeks_corrected[-1] if weeks_corrected else 'N/A'}
@@ -333,7 +333,7 @@ def send_simple_test_email():
         <html>
         <body>
             <h2>🧪 Google Ads Bot Test</h2>
-            <p>This is a test email from your enhanced Google Ads reporting bot with weekly comparison.</p>
+            <p>This is a test email from your enhanced Google Ads reporting bot with daily comparison.</p>
             <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <p>If you receive this, your email configuration is working! ✅</p>
             <p><em>Next report will include 4-week campaign comparison tables with Cost Micros data.</em></p>
@@ -342,7 +342,7 @@ def send_simple_test_email():
         """
         
         msg = MIMEMultipart()
-        msg['Subject'] = "🧪 Google Ads Bot Test - Weekly Comparison Ready"
+        msg['Subject'] = "🧪 Google Ads Bot Test - Daily Comparison Ready"
         msg['From'] = email_user
         msg['To'] = email_to
         msg.attach(MIMEText(html, 'html'))

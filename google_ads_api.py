@@ -139,7 +139,7 @@ def clean_numeric_value(value):
     str_val = str(value).strip()
     
     # Remove currency symbols, commas, and other non-numeric characters
-    str_val = str_val.replace('€', '').replace('', '').replace(',', '').replace('%', '')
+    str_val = str_val.replace('€', '').replace('$', '').replace(',', '').replace('%', '')
     
     # Try to convert to float
     try:
@@ -163,10 +163,10 @@ def get_last_4_weeks():
     
     return weeks
 
-def fetch_weekly_comparison_data():
-    """Fetch and organize data for weekly comparison view"""
+def fetch_daily_comparison_data():
+    """Fetch and organize data for daily comparison view"""
     try:
-        print("🚀 Starting weekly comparison data fetch...")
+        print("🚀 Starting daily comparison data fetch...")
         
         # Load all data from sheet
         df_all = load_campaign_data()
@@ -264,7 +264,7 @@ def fetch_weekly_comparison_data():
         }
         
     except Exception as e:
-        print(f"❌ Error in fetch_weekly_comparison_data: {e}")
+        print(f"❌ Error in fetch_daily_comparison_data: {e}")
         import traceback
         traceback.print_exc()
         return {"campaigns": {}, "weeks": []}
