@@ -37,7 +37,7 @@ def send_daily_comparison_email(daily_data):
         
         # Create email message
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f"📊 Google Ads Daily Comparison - {datetime.now().strftime('%b %d, %Y')}"
+        msg['Subject'] = f"gads luma campaign - {datetime.now().strftime('%b %d, %Y')}"
         msg['From'] = email_user
         msg['To'] = email_to
         
@@ -420,7 +420,7 @@ def send_simple_test_email():
         """
         
         msg = MIMEMultipart()
-        msg['Subject'] = "🧪 Google Ads Bot Test - Daily Comparison Ready"
+        msg['Subject'] = "gads luma campaign test"
         msg['From'] = email_user
         msg['To'] = email_to
         msg.attach(MIMEText(html, 'html'))
