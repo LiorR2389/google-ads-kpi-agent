@@ -99,6 +99,7 @@ def generate_daily_comparison_html(daily_data):
     """Generate HTML email for daily comparison"""
     campaigns = daily_data.get('campaigns', {})
     weeks = daily_data.get('weeks', [])
+    conversion_actions = daily_data.get('conversion_actions', [])
     
     # Reverse the weeks list so the most recent week is actually "This Week"
     weeks_corrected = list(reversed(weeks))
@@ -233,6 +234,54 @@ def generate_daily_comparison_html(daily_data):
                     </div>
                 </div>
                 
+                <!-- Conversion Actions Table -->
+                <div style="margin-top: 40px;">
+                    <h2 style="color: #333; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+                        🎯 <span>Conversion Actions (Last 7 Days)</span>
+                    </h2>
+                    
+                    <div style="overflow-x: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 8px;">
+                        <table style="width: 100%; border-collapse: collapse; background: white;">
+                            <thead>
+                                <tr style="background: linear-gradient(135deg, #28a745, #20c997);">
+                                    <th style="padding: 15px; text-align: left; color: white; font-weight: 600;">Date</th>
+                                    <th style="padding: 15px; text-align: left; color: white; font-weight: 600;">Campaign Name</th>
+                                    <th style="padding: 15px; text-align: center; color: white; font-weight: 600;">Conversions</th>
+                                    <th style="padding: 15px; text-align: left; color: white; font-weight: 600;">Conversion Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>"""
+    
+    # Add conversion action rows
+    if conversion_actions:
+        for i, row in enumerate(conversion_actions):
+            bg_color = "#f8f9fa" if i % 2 == 0 else "white"
+            date = row.get(list(row.keys())[0], '') if row else ''
+            campaign = row.get(list(row.keys())[1], '') if len(row.keys()) > 1 else ''
+            conversions = row.get(list(row.keys())[2], '') if len(row.keys()) > 2 else ''
+            action_name = row.get(list(row.keys())[3], '') if len(row.keys()) > 3 else ''
+            
+            html += f"""
+                                <tr style="background-color: {bg_color};">
+                                    <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;">{date}</td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;">{campaign}</td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px; text-align: center; font-weight: bold; color: #28a745;">{conversions}</td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;">{action_name}</td>
+                                </tr>
+            """
+    else:
+        html += """
+                                <tr>
+                                    <td colspan="4" style="padding: 20px; text-align: center; color: #666; font-style: italic;">No conversion data available</td>
+                                </tr>
+        """
+    
+    html += """
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
                 <!-- Legend -->
                 <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-top: 20px;">
                     <h4 style="color: #333; margin-top: 0; margin-bottom: 10px; font-size: 14px;">📋 Column Definitions</h4>
@@ -265,6 +314,7 @@ def generate_daily_comparison_text(daily_data):
     """Generate plain text version of daily comparison"""
     campaigns = daily_data.get('campaigns', {})
     weeks = daily_data.get('weeks', [])
+    conversion_actions = daily_data.get('conversion_actions', [])
     
     # Reverse the weeks list so the most recent week is actually "This Week"
     weeks_corrected = list(reversed(weeks))
@@ -314,6 +364,25 @@ CAMPAIGN DATA:
     text += """
 Please view the HTML version for the complete table format with all metrics.
 
+CONVERSION ACTIONS (Last 7 Days):
+"""
+    
+    if conversion_actions:
+        text += "-" * 80 + "\n"
+        text += f"{'Date':<12} {'Campaign':<30} {'Conversions':<12} {'Action':<20}\n"
+        text += "-" * 80 + "\n"
+        
+        for row in conversion_actions:
+            date = str(row.get(list(row.keys())[0], ''))[:10] if row else ''
+            campaign = str(row.get(list(row.keys())[1], ''))[:28] if len(row.keys()) > 1 else ''
+            conversions = str(row.get(list(row.keys())[2], '')) if len(row.keys()) > 2 else ''
+            action_name = str(row.get(list(row.keys())[3], ''))[:18] if len(row.keys()) > 3 else ''
+            
+            text += f"{date:<12} {campaign:<30} {conversions:<12} {action_name:<20}\n"
+    else:
+        text += "No conversion action data available.\n"
+
+    text += """
 Column Definitions:
 - Impr.: Impressions
 - Clicks: Total clicks

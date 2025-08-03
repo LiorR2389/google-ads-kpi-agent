@@ -10,6 +10,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 DATA_DIR = "data"
 SHEET_ID = "1rBjY6_AeDIG-1UEp3JvA44CKLAqn3JAGFttixkcRaKg"
 SHEET_NAME = "Daily Ad Group Performance Report"
+CONVERSION_SHEET_NAME = "Daily Ad Group Conversion Action Report"
 
 def load_campaign_data():
     try:
@@ -176,7 +177,195 @@ def fetch_daily_comparison_data():
         
         if df_all.empty:
             print("❌ No data loaded from sheet")
-            return {"campaigns": {}, "weeks": []}
+            return {"campaigns": {}, "weeks": [], "conversion_actions": []}
+        
+        df_all_mapped = clean_and_map_columns(df_all)
+        
+        # Clean and parse dates
+        if 'date' not in df_all_mapped.columns:
+            print("❌ No date column found")
+            return {"campaigns": {}, "weeks": [], "conversion_actions": []}
+        
+        df_copy = df_all_mapped.copy()
+        df_copy = df_copy[df_copy['date'].notna() & (df_copy['date'] != '')]
+        df_copy['date_parsed'] = pd.to_datetime(df_copy['date'], errors='coerce')
+        df_copy = df_copy.dropna(subset=['date_parsed'])
+        
+        if len(df_copy) == 0:
+            print("❌ No valid dates found")
+            return {"campaigns": {}, "weeks": [], "conversion_actions": []}
+        
+        # Get last 4 weeks
+        weeks = get_last_4_weeks()
+        print(f"📅 Analyzing weeks: {[f'{w[0]} to {w[1]}' for w in weeks]}")
+        
+        # Group data by campaign and week
+        campaigns_data = {}
+        week_labels = []
+        
+        for week_start, week_end in weeks:
+            week_label = f"{week_start} to {week_end}"
+            week_labels.append(week_label)
+            
+            # Filter data for this week
+            week_data = df_copy[
+                (df_copy['date_parsed'].dt.date >= week_start) & 
+                (df_copy['date_parsed'].dt.date <= week_end)
+            ]
+            
+            print(f"📊 Week {week_label}: {len(week_data)} rows")
+            
+            if not week_data.empty:
+                # Group by campaign and aggregate
+                for campaign in week_data['campaign'].unique():
+                    if pd.isna(campaign) or campaign == '':
+                        continue
+                        
+                    campaign_week_data = week_data[week_data['campaign'] == campaign]
+                    
+                    if campaign not in campaigns_data:
+                        campaigns_data[campaign] = {}
+                    
+                    # Aggregate the week's data for this campaign
+                    total_impressions = sum(clean_numeric_value(x) for x in campaign_week_data.get('impressions', []))
+                    total_clicks = sum(clean_numeric_value(x) for x in campaign_week_data.get('clicks', []))
+                    
+                    # Calculate CTR
+                    ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+                    
+                    # Get other metrics (take average or sum as appropriate)
+                    conversions = sum(clean_numeric_value(x) for x in campaign_week_data.get('conversions', []))
+                    
+                    # For percentages, take average
+                    search_imp_share_values = [clean_numeric_value(x) for x in campaign_week_data.get('search_impression_share', []) if clean_numeric_value(x) > 0]
+                    search_imp_share = sum(search_imp_share_values) / len(search_imp_share_values) if search_imp_share_values else 0
+                    
+                    cost_per_conv_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_per_conversion', []) if clean_numeric_value(x) > 0]
+                    cost_per_conversion = sum(cost_per_conv_values) / len(cost_per_conv_values) if cost_per_conv_values else 0
+                    
+                    # Handle cost micros
+                    cost_micros_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_micros', []) if clean_numeric_value(x) > 0]
+                    cost_micros = sum(cost_micros_values) / len(cost_micros_values) if cost_micros_values else 0
+                    
+                    # Handle phone calls
+                    phone_calls_values = [clean_numeric_value(x) for x in campaign_week_data.get('phone_calls', [])]
+                    phone_calls = sum(phone_calls_values)
+                    
+                    campaigns_data[campaign][week_label] = {
+                        'impressions': int(total_impressions),
+                        'clicks': int(total_clicks),
+                        'ctr': round(ctr, 2),
+                        'conversions': conversions,
+                        'search_impression_share': round(search_imp_share, 2) if search_imp_share > 0 else '—',
+                        'cost_per_conversion': round(cost_per_conversion, 2) if cost_per_conversion > 0 else '—',
+                        'cost_micros': round(cost_micros, 2) if cost_micros > 0 else '—',
+                        'phone_calls': round(phone_calls, 2) if phone_calls > 0 else '—'
+                    }
+        
+        print(f"✅ Processed {len(campaigns_data)} campaigns across {len(week_labels)} weeks")
+        
+        # Sort weeks chronologically (most recent first)
+        week_labels.reverse()
+        
+        return {
+            "campaigns": campaigns_data,
+            "weeks": week_labels,
+            "conversion_actions": fetch_conversion_action_data()
+        }
+        
+    except Exception as e:
+        print(f"❌ Error in fetch_daily_comparison_data: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"campaigns": {}, "weeks": [], "conversion_actions": []}
+
+def fetch_conversion_action_data():
+    """Fetch conversion action data from the second sheet"""
+    try:
+        print("🚀 Starting conversion action data fetch...")
+        
+        b64_key = os.getenv("GOOGLE_CREDENTIALS_B64")
+        if not b64_key:
+            raise ValueError("Missing GOOGLE_CREDENTIALS_B64 environment variable")
+
+        key_data = base64.b64decode(b64_key).decode("utf-8")
+        creds_dict = json.loads(key_data)
+
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+
+        sheet = client.open_by_key(SHEET_ID).worksheet(CONVERSION_SHEET_NAME)
+        all_data = sheet.get_all_values()
+        
+        print(f"📊 Conversion data rows loaded: {len(all_data)}")
+        
+        if len(all_data) < 3:
+            print("⚠️ Not enough conversion data rows found")
+            return []
+        
+        # Look for the actual data - skip header rows
+        data_start_row = None
+        for i, row in enumerate(all_data):
+            if len(row) > 1 and any(char.isdigit() for char in str(row[0])) and str(row[1]).strip():
+                data_start_row = i
+                print(f"🎯 Found conversion data starting at row {i}: {row}")
+                break
+        
+        if data_start_row is None:
+            print("⚠️ Could not find conversion data rows")
+            return []
+        
+        # Use the row before data as headers
+        if data_start_row > 0:
+            headers = all_data[data_start_row - 1]
+        else:
+            headers = ['Date', 'Campaign Name', 'Conversions', 'Conversion Action Name']
+        
+        data_rows = all_data[data_start_row:]
+        
+        # Filter out empty rows
+        valid_data_rows = []
+        for row in data_rows:
+            if len(row) >= 2 and str(row[0]).strip() and str(row[1]).strip():
+                valid_data_rows.append(row)
+        
+        print(f"📝 Valid conversion data rows after filtering: {len(valid_data_rows)}")
+        
+        if not valid_data_rows:
+            print("⚠️ No valid conversion data rows found after filtering")
+            return []
+        
+        df = pd.DataFrame(valid_data_rows, columns=headers)
+        df.columns = [str(col).strip() for col in df.columns]
+        
+        print(f"✅ Created conversion DataFrame with {len(df)} rows")
+        
+        # Get last 7 days of conversion data
+        df_copy = df.copy()
+        df_copy = df_copy[df_copy.iloc[:, 0].notna() & (df_copy.iloc[:, 0] != '')]
+        df_copy['date_parsed'] = pd.to_datetime(df_copy.iloc[:, 0], errors='coerce')
+        df_copy = df_copy.dropna(subset=['date_parsed'])
+        
+        if len(df_copy) == 0:
+            print("❌ No valid conversion dates found")
+            return []
+        
+        # Get last 7 days
+        today = datetime.date.today()
+        seven_days_ago = today - datetime.timedelta(days=7)
+        
+        recent_data = df_copy[df_copy['date_parsed'].dt.date >= seven_days_ago]
+        
+        print(f"✅ Processed {len(recent_data)} conversion rows from last 7 days")
+        
+        return recent_data.to_dict('records')
+        
+    except Exception as e:
+        print(f"❌ Error in fetch_conversion_action_data: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
         
         df_all_mapped = clean_and_map_columns(df_all)
         
@@ -268,7 +457,8 @@ def fetch_daily_comparison_data():
         
         return {
             "campaigns": campaigns_data,
-            "weeks": week_labels
+            "weeks": week_labels,
+            "conversion_actions": fetch_conversion_action_data()
         }
         
     except Exception as e:
