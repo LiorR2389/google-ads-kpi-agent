@@ -49,7 +49,7 @@ def load_campaign_data():
         if data_start_row > 0:
             headers = all_data[data_start_row - 1]
         else:
-            headers = ['Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions', 'Search Impression Share', 'Cost Per Conversion', 'Cost Micros']
+            headers = ['Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions', 'Search Impression Share', 'Cost Per Conversion', 'Cost Micros', 'Phone Calls']
         
         data_rows = all_data[data_start_row:]
         
@@ -92,7 +92,8 @@ def create_empty_dataframe():
         'Conversions': [],
         'Search Impression Share': [],
         'Cost Per Conversion': [],
-        'Cost Micros': []
+        'Cost Micros': [],
+        'Phone Calls': []
     })
 
 def clean_and_map_columns(df):
@@ -122,6 +123,8 @@ def clean_and_map_columns(df):
             column_mapping[col] = 'search_impression_share'
         elif 'cost' in col_lower and 'micro' in col_lower:
             column_mapping[col] = 'cost_micros'
+        elif 'phone' in col_lower and 'call' in col_lower:
+            column_mapping[col] = 'phone_calls'
     
     print(f"🗺️ Column mapping: {column_mapping}")
     
@@ -243,6 +246,10 @@ def fetch_daily_comparison_data():
                     cost_micros_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_micros', []) if clean_numeric_value(x) > 0]
                     cost_micros = sum(cost_micros_values) / len(cost_micros_values) if cost_micros_values else 0
                     
+                    # Handle phone calls
+                    phone_calls_values = [clean_numeric_value(x) for x in campaign_week_data.get('phone_calls', [])]
+                    phone_calls = sum(phone_calls_values)
+                    
                     campaigns_data[campaign][week_label] = {
                         'impressions': int(total_impressions),
                         'clicks': int(total_clicks),
@@ -250,7 +257,8 @@ def fetch_daily_comparison_data():
                         'conversions': conversions,
                         'search_impression_share': round(search_imp_share, 2) if search_imp_share > 0 else '—',
                         'cost_per_conversion': round(cost_per_conversion, 2) if cost_per_conversion > 0 else '—',
-                        'cost_micros': round(cost_micros, 2) if cost_micros > 0 else '—'
+                        'cost_micros': round(cost_micros, 2) if cost_micros > 0 else '—',
+                        'phone_calls': round(phone_calls, 2) if phone_calls > 0 else '—'
                     }
         
         print(f"✅ Processed {len(campaigns_data)} campaigns across {len(week_labels)} weeks")

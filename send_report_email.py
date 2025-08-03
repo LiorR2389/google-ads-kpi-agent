@@ -107,7 +107,7 @@ def generate_daily_comparison_html(daily_data):
     week_headers = ""
     for i, week in enumerate(weeks_corrected):
         week_label = f"This Week" if i == 0 else f"Week {i+1}"
-        week_headers += f"<th colspan='7' style='padding: 15px; text-align: center; background: #667eea; color: white; font-weight: 600;'>{week_label}<br><span style='font-size: 11px; opacity: 0.8;'>{week}</span></th>"
+        week_headers += f"<th colspan='8' style='padding: 15px; text-align: center; background: #667eea; color: white; font-weight: 600;'>{week_label}<br><span style='font-size: 11px; opacity: 0.8;'>{week}</span></th>"
     
     # Subheaders for metrics
     metric_headers = ""
@@ -120,6 +120,7 @@ def generate_daily_comparison_html(daily_data):
             <th style='padding: 8px; text-align: center; background: #495057; color: white; font-size: 11px;'>Impr.Share</th>
             <th style='padding: 8px; text-align: center; background: #495057; color: white; font-size: 11px;'>Cost/Conv</th>
             <th style='padding: 8px; text-align: center; background: #495057; color: white; font-size: 11px;'>Cost Micros</th>
+            <th style='padding: 8px; text-align: center; background: #495057; color: white; font-size: 11px;'>Phone Calls</th>
         """
     
     # Campaign rows
@@ -138,6 +139,7 @@ def generate_daily_comparison_html(daily_data):
             search_share = week_data.get('search_impression_share', '—')
             cost_conv = week_data.get('cost_per_conversion', '—')
             cost_micros = week_data.get('cost_micros', '—')
+            phone_calls = week_data.get('phone_calls', '—')
             
             # Format numbers properly
             impressions_formatted = f"{impressions:,}" if isinstance(impressions, (int, float)) else str(impressions)
@@ -146,6 +148,7 @@ def generate_daily_comparison_html(daily_data):
             search_share_formatted = f"{search_share}%" if search_share != '—' else '—'
             cost_conv_formatted = f"€{cost_conv}" if cost_conv != '—' else '—'
             cost_micros_formatted = f"€{cost_micros}" if cost_micros != '—' else '—'
+            phone_calls_formatted = f"€{phone_calls}" if phone_calls != '—' else '—'
             
             week_cells += f"""
                 <td style='padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; font-size: 12px;'>{impressions_formatted}</td>
@@ -155,6 +158,7 @@ def generate_daily_comparison_html(daily_data):
                 <td style='padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; font-size: 12px;'>{search_share_formatted}</td>
                 <td style='padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; font-size: 12px;'>{cost_conv_formatted}</td>
                 <td style='padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; font-size: 12px;'>{cost_micros_formatted}</td>
+                <td style='padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; font-size: 12px;'>{phone_calls_formatted}</td>
             """
         
         campaign_rows += f"""
@@ -240,6 +244,7 @@ def generate_daily_comparison_html(daily_data):
                         <div><strong>Impr.Share:</strong> Search impression share (%)</div>
                         <div><strong>Cost/Conv:</strong> Cost per conversion (€)</div>
                         <div><strong>Cost Micros:</strong> Cost in micros (€)</div>
+                        <div><strong>Phone Calls:</strong> Phone calls (€)</div>
                     </div>
                 </div>
             </div>
@@ -288,12 +293,14 @@ CAMPAIGN DATA:
             ctr = week_data.get('ctr', '—')
             conversions = week_data.get('conversions', '—')
             cost_micros = week_data.get('cost_micros', '—')
+            phone_calls = week_data.get('phone_calls', '—')
             
             # Format numbers properly
             impressions_formatted = f"{impressions:,}" if isinstance(impressions, (int, float)) else str(impressions)
             clicks_formatted = f"{clicks:,}" if isinstance(clicks, (int, float)) else str(clicks)
             ctr_formatted = f"{ctr}%" if ctr != '—' else '—'
             cost_micros_formatted = f"€{cost_micros}" if cost_micros != '—' else '—'
+            phone_calls_formatted = f"€{phone_calls}" if phone_calls != '—' else '—'
             
             text += f"{week_label} ({week}):\n"
             text += f"  Impressions: {impressions_formatted}\n"
@@ -301,6 +308,7 @@ CAMPAIGN DATA:
             text += f"  CTR: {ctr_formatted}\n"
             text += f"  Conversions: {conversions}\n"
             text += f"  Cost Micros: {cost_micros_formatted}\n"
+            text += f"  Phone Calls: {phone_calls_formatted}\n"
             text += "\n"
     
     text += """
@@ -314,6 +322,7 @@ Column Definitions:
 - Impr.Share: Search impression share (%)
 - Cost/Conv: Cost per conversion (€)
 - Cost Micros: Cost in micros (€)
+- Phone Calls: Phone calls (€)
 """
     
     return text

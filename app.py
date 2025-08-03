@@ -72,7 +72,7 @@ def format_daily_comparison_for_web(daily_data):
     
     # Campaign headers
     for campaign_name in campaigns.keys():
-        html += f"<th colspan='7' style='padding: 15px; text-align: center; font-weight: 600; border-right: 1px solid #495057;'>{campaign_name[:30]}{'...' if len(campaign_name) > 30 else ''}</th>"
+        html += f"<th colspan='8' style='padding: 15px; text-align: center; font-weight: 600; border-right: 1px solid #495057;'>{campaign_name[:30]}{'...' if len(campaign_name) > 30 else ''}</th>"
     
     html += """
                         </tr>
@@ -89,6 +89,7 @@ def format_daily_comparison_for_web(daily_data):
             <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Impr.Shr</th>
             <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Cost/Conv</th>
             <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Cost Micros</th>
+            <th style='padding: 8px; text-align: center; font-size: 11px; border-right: 1px solid #6c757d;'>Phone Calls</th>
         """
     
     html += """
@@ -156,6 +157,9 @@ def format_daily_comparison_for_web(daily_data):
             cost_micros = week_data.get('cost_micros', '—')
             cost_micros_formatted = f"€{cost_micros}" if cost_micros != '—' else '—'
             
+            phone_calls = week_data.get('phone_calls', '—')
+            phone_calls_formatted = f"€{phone_calls}" if phone_calls != '—' else '—'
+            
             html += f"""
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{impressions_formatted}</td>
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px; color: #667eea; font-weight: bold;">{clicks_formatted}</td>
@@ -164,6 +168,7 @@ def format_daily_comparison_for_web(daily_data):
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{search_share_formatted}</td>
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{cost_conv_formatted}</td>
                             <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{cost_micros_formatted}</td>
+                            <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e9ecef; border-right: 1px solid #e9ecef; font-size: 12px;">{phone_calls_formatted}</td>
             """
         
         html += """
