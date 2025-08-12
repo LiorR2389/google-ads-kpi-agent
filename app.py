@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from google_ads_api import fetch_daily_comparison_data, fetch_keynote_comparison_data
+from google_ads_api import fetch_daily_comparison_data
 from send_report_email import send_daily_comparison_email, send_keynote_comparison_email, send_simple_test_email
 import os
 import traceback
@@ -271,7 +271,7 @@ def trigger_keynote():
         print("🚀 Starting Google Ads Keynote daily comparison generation...")
         
         # Generate Keynote daily comparison data
-        keynote_data = fetch_keynote_comparison_data()
+        keynote_data = fetch_daily_comparison_data()  # Using same function for now
         last_keynote_data = keynote_data
         keynote_report_ready = True
         
@@ -395,7 +395,7 @@ def trigger_both():
     # Generate Keynote report
     try:
         print("🚀 Starting Keynote daily comparison generation...")
-        keynote_data = fetch_keynote_comparison_data()
+        keynote_data = fetch_daily_comparison_data()  # Using same function for now
         last_keynote_data = keynote_data
         keynote_report_ready = True
         
