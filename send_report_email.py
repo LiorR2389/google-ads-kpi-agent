@@ -7,7 +7,7 @@ from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 
 def send_daily_comparison_email(daily_data):
-    """Send daily comparison email with campaign data in table format"""
+    """Send daily comparison email with Luma campaign data in table format"""
     
     # Check environment variables
     email_user = os.getenv("EMAIL_USER")
@@ -26,14 +26,14 @@ def send_daily_comparison_email(daily_data):
         weeks = daily_data.get('weeks', [])
         
         if not campaigns or not weeks:
-            print("❌ No campaign data to send")
+            print("❌ No Luma campaign data to send")
             return
         
         # Create HTML email
-        html_content = generate_daily_comparison_html(daily_data)
+        html_content = generate_daily_comparison_html(daily_data, "Luma")
         
         # Create plain text version
-        plain_text = generate_daily_comparison_text(daily_data)
+        plain_text = generate_daily_comparison_text(daily_data, "Luma")
         
         # Create email message
         msg = MIMEMultipart('alternative')
@@ -48,54 +48,105 @@ def send_daily_comparison_email(daily_data):
         msg.attach(text_part)
         msg.attach(html_part)
         
-        # Try different SMTP configurations
-        smtp_configs = [
-            {"host": "smtp.gmail.com", "port": 587, "use_tls": True},
-            {"host": "smtp.gmail.com", "port": 465, "use_ssl": True}
-        ]
-        
-        for config in smtp_configs:
-            try:
-                print(f"🔄 Trying SMTP: {config['host']}:{config['port']}")
-                
-                if config.get("use_ssl"):
-                    server = smtplib.SMTP_SSL(config["host"], config["port"])
-                    print("✓ SSL connection established")
-                else:
-                    server = smtplib.SMTP(config["host"], config["port"])
-                    if config.get("use_tls"):
-                        server.starttls()
-                        print("✓ TLS connection established")
-                
-                server.login(email_user, email_password)
-                print("✓ Login successful")
-                
-                server.send_message(msg)
-                server.quit()
-                
-                print("✅ Daily comparison email sent successfully!")
-                return
-                
-            except smtplib.SMTPAuthenticationError as e:
-                print(f"❌ Authentication failed: {e}")
-                print("💡 Tip: Make sure you're using an App Password, not your regular Gmail password")
-                break
-                
-            except smtplib.SMTPServerDisconnected as e:
-                print(f"❌ Server disconnected: {e}")
-                continue
-                
-            except Exception as e:
-                print(f"❌ Failed with {config['host']}:{config['port']} - {e}")
-                continue
-        
-        print("❌ All SMTP configurations failed")
+        # Send email
+        _send_email(msg, email_user, email_password)
+        print("✅ Luma daily comparison email sent successfully!")
         
     except Exception as e:
-        print(f"❌ Email preparation failed: {e}")
+        print(f"❌ Luma email preparation failed: {e}")
         raise
 
-def generate_daily_comparison_html(daily_data):
+def send_keynote_comparison_email(keynote_data):
+    """Send daily comparison email with Keynote campaign data in table format"""
+    
+    # Check environment variables
+    email_user = os.getenv("EMAIL_USER")
+    email_password = os.getenv("EMAIL_PASSWORD") 
+    email_to = os.getenv("EMAIL_TO")
+    
+    if not all([email_user, email_password, email_to]):
+        print("❌ Missing email configuration for Keynote")
+        return
+    
+    try:
+        campaigns = keynote_data.get('campaigns', {})
+        weeks = keynote_data.get('weeks', [])
+        
+        if not campaigns or not weeks:
+            print("❌ No Keynote campaign data to send")
+            return
+        
+        # Create HTML email
+        html_content = generate_daily_comparison_html(keynote_data, "Keynote")
+        
+        # Create plain text version
+        plain_text = generate_daily_comparison_text(keynote_data, "Keynote")
+        
+        # Create email message
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = f"gads keynote campaign - {datetime.now().strftime('%b %d, %Y')}"
+        msg['From'] = email_user
+        msg['To'] = email_to
+        
+        # Add text and HTML parts
+        text_part = MIMEText(plain_text, 'plain')
+        html_part = MIMEText(html_content, 'html')
+        
+        msg.attach(text_part)
+        msg.attach(html_part)
+        
+        # Send email
+        _send_email(msg, email_user, email_password)
+        print("✅ Keynote daily comparison email sent successfully!")
+        
+    except Exception as e:
+        print(f"❌ Keynote email preparation failed: {e}")
+        raise
+
+def _send_email(msg, email_user, email_password):
+    """Helper function to send email with different SMTP configurations"""
+    # Try different SMTP configurations
+    smtp_configs = [
+        {"host": "smtp.gmail.com", "port": 587, "use_tls": True},
+        {"host": "smtp.gmail.com", "port": 465, "use_ssl": True}
+    ]
+    
+    for config in smtp_configs:
+        try:
+            print(f"🔄 Trying SMTP: {config['host']}:{config['port']}")
+            
+            if config.get("use_ssl"):
+                server = smtplib.SMTP_SSL(config["host"], config["port"])
+                print("✓ SSL connection established")
+            else:
+                server = smtplib.SMTP(config["host"], config["port"])
+                if config.get("use_tls"):
+                    server.starttls()
+                    print("✓ TLS connection established")
+            
+            server.login(email_user, email_password)
+            print("✓ Login successful")
+            
+            server.send_message(msg)
+            server.quit()
+            return
+            
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"❌ Authentication failed: {e}")
+            print("💡 Tip: Make sure you're using an App Password, not your regular Gmail password")
+            break
+            
+        except smtplib.SMTPServerDisconnected as e:
+            print(f"❌ Server disconnected: {e}")
+            continue
+            
+        except Exception as e:
+            print(f"❌ Failed with {config['host']}:{config['port']} - {e}")
+            continue
+    
+    print("❌ All SMTP configurations failed")
+
+def generate_daily_comparison_html(daily_data, campaign_type="Luma"):
     """Generate HTML email for daily comparison"""
     campaigns = daily_data.get('campaigns', {})
     weeks = daily_data.get('weeks', [])
@@ -169,6 +220,16 @@ def generate_daily_comparison_html(daily_data):
             </tr>
         """
     
+    # Set colors based on campaign type
+    if campaign_type == "Keynote":
+        primary_color = "#dc3545"  # Red theme for Keynote
+        gradient = "linear-gradient(135deg, #dc3545 0%, #c82333 100%)"
+        accent_color = "#f8d7da"
+    else:
+        primary_color = "#667eea"  # Blue theme for Luma
+        gradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+        accent_color = "#e7f3ff"
+    
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -180,15 +241,15 @@ def generate_daily_comparison_html(daily_data):
         <div style="max-width: 1200px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             
             <!-- Header -->
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
-                <h1 style="margin: 0; font-size: 24px;">📊 Google Ads Daily Comparison</h1>
+            <div style="background: {gradient}; color: white; padding: 30px; text-align: center;">
+                <h1 style="margin: 0; font-size: 24px;">📊 Google Ads {campaign_type} Daily Comparison</h1>
                 <p style="margin: 10px 0 0 0; opacity: 0.9;">Last 4 Weeks Performance • {datetime.now().strftime('%B %d, %Y')}</p>
             </div>
             
             <!-- Daily Comparison Table -->
             <div style="padding: 30px;">
                 <h2 style="color: #333; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-                    📅 <span>Campaign Performance by Week</span>
+                    📅 <span>{campaign_type} Campaign Performance by Week</span>
                 </h2>
                 
                 <div style="overflow-x: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 8px;">
@@ -209,26 +270,26 @@ def generate_daily_comparison_html(daily_data):
                 </div>
                 
                 <!-- Summary Stats -->
-                <div style="background: #e7f3ff; border-left: 4px solid #0066cc; padding: 20px; margin: 30px 0; border-radius: 0 8px 8px 0;">
-                    <h3 style="color: #0066cc; margin-top: 0; margin-bottom: 15px;">📊 Summary</h3>
+                <div style="background: {accent_color}; border-left: 4px solid {primary_color}; padding: 20px; margin: 30px 0; border-radius: 0 8px 8px 0;">
+                    <h3 style="color: {primary_color}; margin-top: 0; margin-bottom: 15px;">📊 {campaign_type} Summary</h3>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
                         <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
                             <div style="font-size: 14px; color: #666; margin-bottom: 5px;">Campaigns</div>
-                            <div style="font-size: 20px; font-weight: bold; color: #0066cc;">{len(campaigns)}</div>
+                            <div style="font-size: 20px; font-weight: bold; color: {primary_color};">{len(campaigns)}</div>
                         </div>
                         <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
                             <div style="font-size: 14px; color: #666; margin-bottom: 5px;">Weeks</div>
-                            <div style="font-size: 20px; font-weight: bold; color: #0066cc;">{len(weeks_corrected)}</div>
+                            <div style="font-size: 20px; font-weight: bold; color: {primary_color};">{len(weeks_corrected)}</div>
                         </div>
                         <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
                             <div style="font-size: 14px; color: #666; margin-bottom: 5px;">Date Range</div>
-                            <div style="font-size: 12px; font-weight: bold; color: #0066cc;">{weeks_corrected[0] if weeks_corrected else 'N/A'}</div>
+                            <div style="font-size: 12px; font-weight: bold; color: {primary_color};">{weeks_corrected[0] if weeks_corrected else 'N/A'}</div>
                             <div style="font-size: 12px; color: #666;">to {weeks_corrected[-1] if weeks_corrected else 'N/A'}</div>
                         </div>
                     </div>
                     <div style="border-top: 1px solid #cce7ff; padding-top: 15px; margin-top: 15px;">
-                        <p style="margin: 0; color: #0066cc; font-weight: 500; font-size: 14px;">
-                            💡 Use this daily comparison to identify trends and optimize your campaigns. 
+                        <p style="margin: 0; color: {primary_color}; font-weight: 500; font-size: 14px;">
+                            💡 Use this {campaign_type.lower()} daily comparison to identify trends and optimize your campaigns. 
                             Look for consistent performers and investigate any significant drops or spikes.
                         </p>
                     </div>
@@ -237,7 +298,7 @@ def generate_daily_comparison_html(daily_data):
                 <!-- Conversion Actions Table -->
                 <div style="margin-top: 40px;">
                     <h2 style="color: #333; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-                        🎯 <span>Conversion Actions (Last 7 Days)</span>
+                        🎯 <span>{campaign_type} Conversion Actions (Last 7 Days)</span>
                     </h2>
                     
                     <div style="overflow-x: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 8px;">
@@ -276,7 +337,7 @@ def generate_daily_comparison_html(daily_data):
                                 </tr>
         """
     
-    html += """
+    html += f"""
                             </tbody>
                         </table>
                     </div>
@@ -300,8 +361,8 @@ def generate_daily_comparison_html(daily_data):
             
             <!-- Footer -->
             <div style="background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #e9ecef;">
-                <p style="margin: 0;">🤖 Automated Google Ads Daily Comparison • Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-                <p style="margin: 5px 0 0 0;">Daily performance data for the last 4 weeks • Monitor trends to optimize campaign performance</p>
+                <p style="margin: 0;">🤖 Automated Google Ads {campaign_type} Daily Comparison • Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p style="margin: 5px 0 0 0;">{campaign_type} daily performance data for the last 4 weeks • Monitor trends to optimize campaign performance</p>
             </div>
         </div>
     </body>
@@ -310,7 +371,7 @@ def generate_daily_comparison_html(daily_data):
     
     return html
 
-def generate_daily_comparison_text(daily_data):
+def generate_daily_comparison_text(daily_data, campaign_type="Luma"):
     """Generate plain text version of daily comparison"""
     campaigns = daily_data.get('campaigns', {})
     weeks = daily_data.get('weeks', [])
@@ -320,14 +381,14 @@ def generate_daily_comparison_text(daily_data):
     weeks_corrected = list(reversed(weeks))
     
     text = f"""
-Google Ads Daily Comparison - {datetime.now().strftime('%B %d, %Y')}
+Google Ads {campaign_type} Daily Comparison - {datetime.now().strftime('%B %d, %Y')}
 
-DAILY PERFORMANCE OVERVIEW:
+{campaign_type.upper()} PERFORMANCE OVERVIEW:
 Campaigns analyzed: {len(campaigns)}
 Weeks compared: {len(weeks_corrected)}
 Date range: {weeks_corrected[0] if weeks_corrected else 'N/A'} to {weeks_corrected[-1] if weeks_corrected else 'N/A'}
 
-CAMPAIGN DATA:
+{campaign_type.upper()} CAMPAIGN DATA:
 """
     
     for campaign_name, campaign_data in campaigns.items():
@@ -361,10 +422,10 @@ CAMPAIGN DATA:
             text += f"  Phone Calls: {phone_calls_formatted}\n"
             text += "\n"
     
-    text += """
+    text += f"""
 Please view the HTML version for the complete table format with all metrics.
 
-CONVERSION ACTIONS (Last 7 Days):
+{campaign_type.upper()} CONVERSION ACTIONS (Last 7 Days):
 """
     
     if conversion_actions:
@@ -382,8 +443,8 @@ CONVERSION ACTIONS (Last 7 Days):
     else:
         text += "No conversion action data available.\n"
 
-    text += """
-Column Definitions:
+    text += f"""
+{campaign_type} Column Definitions:
 - Impr.: Impressions
 - Clicks: Total clicks
 - CTR: Click-through rate (%)
@@ -414,13 +475,13 @@ def send_simple_test_email():
             <p>This is a test email from your enhanced Google Ads reporting bot with daily comparison.</p>
             <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <p>If you receive this, your email configuration is working! ✅</p>
-            <p><em>Next report will include 4-week campaign comparison tables with Cost Micros data.</em></p>
+            <p><em>Next reports will include both Luma and Keynote 4-week campaign comparison tables.</em></p>
         </body>
         </html>
         """
         
         msg = MIMEMultipart()
-        msg['Subject'] = "gads luma campaign test"
+        msg['Subject'] = "gads campaign test - luma & keynote"
         msg['From'] = email_user
         msg['To'] = email_to
         msg.attach(MIMEText(html, 'html'))
