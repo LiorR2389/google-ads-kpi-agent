@@ -29,6 +29,13 @@ def send_daily_comparison_email(daily_data):
             print("❌ No Luma campaign data to send")
             return
         
+        # DEBUG: Check Luma conversion data
+        conversion_actions = daily_data.get('conversion_actions', [])
+        print(f"🔍 DEBUG LUMA: Conversion actions count: {len(conversion_actions)}")
+        if conversion_actions:
+            print(f"🔍 DEBUG LUMA: First conversion keys: {list(conversion_actions[0].keys())}")
+            print(f"🔍 DEBUG LUMA: First conversion data: {conversion_actions[0]}")
+        
         # Create HTML email
         html_content = generate_daily_comparison_html(daily_data, "Luma")
         
@@ -75,6 +82,17 @@ def send_keynote_comparison_email(keynote_data):
         if not campaigns or not weeks:
             print("❌ No Keynote campaign data to send")
             return
+        
+        # DEBUG: Check Keynote conversion data
+        conversion_actions = keynote_data.get('conversion_actions', [])
+        print(f"🔍 DEBUG KEYNOTE: Conversion actions count: {len(conversion_actions)}")
+        if conversion_actions:
+            print(f"🔍 DEBUG KEYNOTE: First conversion keys: {list(conversion_actions[0].keys())}")
+            print(f"🔍 DEBUG KEYNOTE: First conversion data: {conversion_actions[0]}")
+            print(f"🔍 DEBUG KEYNOTE: All conversion data: {conversion_actions}")
+        else:
+            print(f"🔍 DEBUG KEYNOTE: No conversion actions found in data")
+            print(f"🔍 DEBUG KEYNOTE: Available keynote_data keys: {list(keynote_data.keys())}")
         
         # Create HTML email
         html_content = generate_daily_comparison_html(keynote_data, "Keynote")
@@ -151,6 +169,13 @@ def generate_daily_comparison_html(daily_data, campaign_type="Luma"):
     campaigns = daily_data.get('campaigns', {})
     weeks = daily_data.get('weeks', [])
     conversion_actions = daily_data.get('conversion_actions', [])
+    
+    # DEBUG: Check what we receive
+    print(f"🔍 DEBUG HTML {campaign_type}: conversion_actions type: {type(conversion_actions)}")
+    print(f"🔍 DEBUG HTML {campaign_type}: conversion_actions length: {len(conversion_actions) if conversion_actions else 0}")
+    if conversion_actions:
+        print(f"🔍 DEBUG HTML {campaign_type}: First item: {conversion_actions[0]}")
+        print(f"🔍 DEBUG HTML {campaign_type}: First item keys: {list(conversion_actions[0].keys()) if isinstance(conversion_actions[0], dict) else 'Not a dict'}")
     
     # Reverse the weeks list so the most recent week is actually "This Week"
     weeks_corrected = list(reversed(weeks))
@@ -313,31 +338,58 @@ def generate_daily_comparison_html(daily_data, campaign_type="Luma"):
                             </thead>
                             <tbody>"""
     
-    # Add conversion action rows - FIXED VERSION
+    # Add conversion action rows - FIXED VERSION WITH ENHANCED DEBUG
     if conversion_actions:
+        print(f"🔍 DEBUG HTML {campaign_type}: Processing {len(conversion_actions)} conversion actions")
         for i, row in enumerate(conversion_actions):
             bg_color = "#f8f9fa" if i % 2 == 0 else "white"
             
-            # Use proper field names based on the actual data structure
-            # Handle both possible date field names
-            date = row.get('Date', row.get('date_parsed', ''))
-            if hasattr(date, 'strftime'):  # If it's a datetime object
-                date = date.strftime('%Y-%m-%d')
+            print(f"🔍 DEBUG HTML {campaign_type}: Row {i}: {row}")
+            print(f"🔍 DEBUG HTML {campaign_type}: Row {i} type: {type(row)}")
             
-            # Use exact field names from logs
-            campaign = row.get('Campaign Name', '')
-            conversions = row.get('Conversions', '')
-            action_name = row.get('Conversion Action Name', '')
-            
-            html += f"""
-                                <tr style="background-color: {bg_color};">
-                                    <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;">{date}</td>
-                                    <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;">{campaign}</td>
-                                    <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px; text-align: center; font-weight: bold; color: #28a745;">{conversions}</td>
-                                    <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;">{action_name}</td>
-                                </tr>
-            """
+            if isinstance(row, dict):
+                print(f"🔍 DEBUG HTML {campaign_type}: Row {i} keys: {list(row.keys())}")
+                
+                # Try all possible field name combinations
+                date = (row.get('Date') or 
+                       row.get('date_parsed') or 
+                       row.get('date') or 
+                       str(list(row.values())[0]) if row else '')
+                
+                campaign = (row.get('Campaign Name') or 
+                           row.get('campaign') or 
+                           row.get('Campaign') or
+                           str(list(row.values())[1]) if len(row.values()) > 1 else '')
+                
+                conversions = (row.get('Conversions') or 
+                              row.get('conversions') or 
+                              str(list(row.values())[2]) if len(row.values()) > 2 else '')
+                
+                action_name = (row.get('Conversion Action Name') or 
+                              row.get('Conversion Action') or 
+                              row.get('action_name') or
+                              str(list(row.values())[3]) if len(row.values()) > 3 else '')
+                
+                # Handle datetime objects
+                if hasattr(date, 'strftime'):
+                    date = date.strftime('%Y-%m-%d')
+                elif hasattr(date, 'date'):
+                    date = date.date().strftime('%Y-%m-%d')
+                
+                print(f"🔍 DEBUG HTML {campaign_type}: Extracted - Date: {date}, Campaign: {campaign}, Conversions: {conversions}, Action: {action_name}")
+                
+                html += f"""
+                                    <tr style="background-color: {bg_color};">
+                                        <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;">{date}</td>
+                                        <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;">{campaign}</td>
+                                        <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px; text-align: center; font-weight: bold; color: #28a745;">{conversions}</td>
+                                        <td style="padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;">{action_name}</td>
+                                    </tr>
+                """
+            else:
+                print(f"🔍 DEBUG HTML {campaign_type}: Row {i} is not a dict: {row}")
     else:
+        print(f"🔍 DEBUG HTML {campaign_type}: No conversion actions to process")
         html += """
                                 <tr>
                                     <td colspan="4" style="padding: 20px; text-align: center; color: #666; font-style: italic;">No conversion data available</td>
@@ -383,6 +435,9 @@ def generate_daily_comparison_text(daily_data, campaign_type="Luma"):
     campaigns = daily_data.get('campaigns', {})
     weeks = daily_data.get('weeks', [])
     conversion_actions = daily_data.get('conversion_actions', [])
+    
+    # DEBUG: Check text conversion data
+    print(f"🔍 DEBUG TEXT {campaign_type}: conversion_actions length: {len(conversion_actions) if conversion_actions else 0}")
     
     # Reverse the weeks list so the most recent week is actually "This Week"
     weeks_corrected = list(reversed(weeks))
@@ -440,14 +495,23 @@ Please view the HTML version for the complete table format with all metrics.
         text += f"{'Date':<12} {'Campaign':<30} {'Conversions':<12} {'Action':<20}\n"
         text += "-" * 80 + "\n"
         
-        # FIXED conversion data extraction for text version
-        for row in conversion_actions:
-            date = str(row.get('Date', row.get('date_parsed', '')))[:10]
-            campaign = str(row.get('Campaign Name', ''))[:28]
-            conversions = str(row.get('Conversions', ''))
-            action_name = str(row.get('Conversion Action Name', ''))[:18]
+        # FIXED conversion data extraction for text version with debug
+        for i, row in enumerate(conversion_actions):
+            print(f"🔍 DEBUG TEXT {campaign_type}: Processing row {i}: {row}")
             
-            text += f"{date:<12} {campaign:<30} {conversions:<12} {action_name:<20}\n"
+            if isinstance(row, dict):
+                date = str(row.get('Date', row.get('date_parsed', '')))[:10]
+                campaign = str(row.get('Campaign Name', ''))[:28]
+                conversions = str(row.get('Conversions', ''))
+                action_name = str(row.get('Conversion Action Name', ''))[:18]
+                
+                # Handle datetime objects
+                if hasattr(row.get('date_parsed'), 'strftime'):
+                    date = row.get('date_parsed').strftime('%Y-%m-%d')
+                
+                print(f"🔍 DEBUG TEXT {campaign_type}: Extracted - Date: {date}, Campaign: {campaign}, Conversions: {conversions}, Action: {action_name}")
+                
+                text += f"{date:<12} {campaign:<30} {conversions:<12} {action_name:<20}\n"
     else:
         text += "No conversion action data available.\n"
 
