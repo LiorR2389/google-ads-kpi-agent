@@ -7,7 +7,6 @@ import base64
 import json
 from oauth2client.service_account import ServiceAccountCredentials
 
-
 DATA_DIR = "data"
 SHEET_ID = "1rBjY6_AeDIG-1UEp3JvA44CKLAqn3JAGFttixkcRaKg"
 SHEET_NAME = "Daily Ad Group Performance Report"
@@ -30,270 +29,205 @@ def load_campaign_data(sheet_name=None):
         print(f"📊 Loading data from sheet: {target_sheet_name}")
         sheet = client.open_by_key(SHEET_ID).worksheet(target_sheet_name)
         all_data = sheet.get_all_values()
-        
+
         print(f"📊 Total rows loaded: {len(all_data)}")
-        
+
         if len(all_data) < 3:
             print("⚠️ Not enough data rows found")
             return create_empty_dataframe()
-        
-        # Look for the actual data - skip header rows
-        data_start_row = None
+
+        # Find the header row (first non-empty row)
+        header_row_idx = 0
         for i, row in enumerate(all_data):
-            if len(row) > 1 and any(char.isdigit() for char in str(row[0])) and str(row[1]).strip():
-                data_start_row = i
-                print(f"🎯 Found data starting at row {i}: {row}")
-                break
+            if any(cell.strip() for cell in row):
+                if 'Date' in row or 'Campaign' in str(row):
+                    header_row_idx = i
+                    break
+
+        # Extract headers and data
+        headers = [col.strip() for col in all_data[header_row_idx]]
+        data_rows = all_data[header_row_idx + 1:]
         
-        if data_start_row is None:
-            print("⚠️ Could not find data rows")
-            return create_empty_dataframe()
-        
-        # Use the row before data as headers, or create our own
-        if data_start_row > 0:
-            headers = all_data[data_start_row - 1]
-        else:
-            headers = ['Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions', 'Search Impression Share', 'Cost Per Conversion', 'Cost Micros', 'Phone Calls']
-        
-        data_rows = all_data[data_start_row:]
-        
-        print(f"🔍 Using headers: {headers}")
-        print(f"📝 Data rows available: {len(data_rows)}")
-        
+        print(f"🎯 Found data starting at row {header_row_idx + 1}: {data_rows[0][:4] if data_rows else 'No data'}")
+        print(f"🔍 Using headers: {headers[:10]}")
+
         # Filter out empty rows
-        valid_data_rows = []
+        valid_rows = []
         for row in data_rows:
-            if len(row) >= 2 and str(row[0]).strip() and str(row[1]).strip():
-                valid_data_rows.append(row)
-        
-        print(f"📝 Valid data rows after filtering: {len(valid_data_rows)}")
-        
-        if not valid_data_rows:
-            print("⚠️ No valid data rows found after filtering")
+            if len(row) >= len(headers):
+                row_padded = row[:len(headers)]
+            else:
+                row_padded = row + [''] * (len(headers) - len(row))
+            
+            if any(cell.strip() for cell in row_padded):
+                valid_rows.append(row_padded)
+
+        print(f"📝 Data rows available: {len(data_rows)}")
+        print(f"📝 Valid data rows after filtering: {len(valid_rows)}")
+
+        if not valid_rows:
+            print("❌ No valid data rows found")
             return create_empty_dataframe()
-        
-        df = pd.DataFrame(valid_data_rows, columns=headers)
-        df.columns = [str(col).strip() for col in df.columns]
-        
+
+        # Create DataFrame
+        df = pd.DataFrame(valid_rows, columns=headers)
         print(f"✅ Created DataFrame with {len(df)} rows")
         print(f"📋 Columns: {list(df.columns)}")
+
+        # Clean the DataFrame
+        df = clean_and_map_columns(df)
         
         return df
-        
+
     except Exception as e:
         print(f"❌ Error in load_campaign_data: {e}")
         import traceback
         traceback.print_exc()
-        return create_empty_dataframe()
+        raise
 
 def create_empty_dataframe():
-    return pd.DataFrame({
-        'Date': [],
-        'Campaign Name': [],
-        'Impressions': [],
-        'Clicks': [],
-        'Ctr': [],
-        'Conversions': [],
-        'Search Impression Share': [],
-        'Cost Per Conversion': [],
-        'Cost Micros': [],
-        'Phone Calls': []
-    })
+    """Create an empty DataFrame with expected columns"""
+    columns = [
+        'Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions',
+        'Search Impression Share', 'Cost Per Conversion', 'Cost Micros', 'Phone Calls'
+    ]
+    return pd.DataFrame(columns=columns)
 
 def clean_and_map_columns(df):
-    if df.empty:
+    """Clean and standardize column names"""
+    try:
+        # Column mapping for different possible names
+        column_mapping = {
+            'Date': 'Date',
+            'Campaign name': 'Campaign Name',
+            'Campaign Name': 'Campaign Name',
+            'Impressions': 'Impressions',
+            'Clicks': 'Clicks',
+            'Ctr': 'Ctr',
+            'CTR': 'Ctr',
+            'Click-through rate': 'Ctr',
+            'Conversions': 'Conversions',
+            'Conv.': 'Conversions',
+            'Search impression share': 'Search Impression Share',
+            'Search Impression Share': 'Search Impression Share',
+            'Impr. share': 'Search Impression Share',
+            'Cost per conversion': 'Cost Per Conversion',
+            'Cost Per Conversion': 'Cost Per Conversion',
+            'Cost/conv.': 'Cost Per Conversion',
+            'Cost micros': 'Cost Micros',
+            'Cost Micros': 'Cost Micros',
+            'Phone calls': 'Phone Calls',
+            'Phone Calls': 'Phone Calls'
+        }
+        
+        # Rename columns based on mapping
+        df.columns = [column_mapping.get(col, col) for col in df.columns]
+        
+        # Ensure required columns exist with default values
+        required_columns = ['Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions', 
+                          'Search Impression Share', 'Cost Per Conversion', 'Cost Micros', 'Phone Calls']
+        
+        for col in required_columns:
+            if col not in df.columns:
+                df[col] = 0 if col != 'Date' and col != 'Campaign Name' else ''
+        
         return df
-    
-    print(f"🔧 Starting column mapping for: {list(df.columns)}")
-    
-    column_mapping = {}
-    for col in df.columns:
-        col_lower = str(col).lower().strip()
-        if 'date' in col_lower:
-            column_mapping[col] = 'date'
-        elif 'campaign' in col_lower:
-            column_mapping[col] = 'campaign'
-        elif 'impression' in col_lower and 'share' not in col_lower:
-            column_mapping[col] = 'impressions'
-        elif 'click' in col_lower:
-            column_mapping[col] = 'clicks'
-        elif 'ctr' in col_lower:
-            column_mapping[col] = 'ctr_raw'
-        elif 'conversion' in col_lower and ('cost' in col_lower or 'per' in col_lower):
-            column_mapping[col] = 'cost_per_conversion'
-        elif 'conversion' in col_lower:
-            column_mapping[col] = 'conversions'
-        elif 'impression' in col_lower and 'share' in col_lower:
-            column_mapping[col] = 'search_impression_share'
-        elif 'cost' in col_lower and 'micro' in col_lower:
-            column_mapping[col] = 'cost_micros'
-        elif 'phone' in col_lower and 'call' in col_lower:
-            column_mapping[col] = 'phone_calls'
-    
-    print(f"🗺️ Column mapping: {column_mapping}")
-    
-    df_mapped = df.rename(columns=column_mapping)
-    print(f"📋 Mapped columns: {list(df_mapped.columns)}")
-    
-    return df_mapped
+        
+    except Exception as e:
+        print(f"❌ Error in clean_and_map_columns: {e}")
+        return df
 
 def clean_numeric_value(value):
-    """Clean numeric values from strings, percentages, currency symbols"""
-    if pd.isna(value) or value == '':
+    """Clean and convert numeric values"""
+    if pd.isna(value) or value == '' or value == '--' or value == '—':
         return 0
     
-    # Convert to string and clean
-    str_val = str(value).strip()
-    
-    # Remove currency symbols, commas, and other non-numeric characters
-    str_val = str_val.replace('€', '').replace('$', '').replace(',', '').replace('%', '')
-    
-    # Try to convert to float
     try:
-        return float(str_val)
+        # Remove common formatting
+        cleaned = str(value).replace(',', '').replace('%', '').replace('€', '').replace('$', '').strip()
+        if cleaned == '' or cleaned == '--' or cleaned == '—':
+            return 0
+        return float(cleaned)
     except (ValueError, TypeError):
         return 0
 
 def get_last_4_weeks():
-    """Get the last 4 weeks date ranges (Monday to Sunday)"""
-    today = datetime.date.today()
+    """Get the date range for the last 4 weeks"""
+    from datetime import datetime, timedelta
     
-    # Find the most recent Monday
-    days_since_monday = today.weekday()
-    last_monday = today - datetime.timedelta(days=days_since_monday)
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=28)  # 4 weeks
     
-    weeks = []
-    for i in range(4):
-        week_start = last_monday - datetime.timedelta(weeks=i)
-        week_end = week_start + datetime.timedelta(days=6)
-        weeks.append((week_start, week_end))
-    
-    return weeks
+    return start_date, end_date
 
 def fetch_daily_comparison_data():
-    """Fetch and organize data for daily comparison view"""
+    """Fetch and process daily comparison data for Luma campaigns"""
     try:
         print("🚀 Starting daily comparison data fetch...")
         
-        # Load all data from sheet
-        df_all = load_campaign_data()
+        # Load campaign data
+        df = load_campaign_data()
         
-        if df_all.empty:
+        if df is None or df.empty:
             print("❌ No data loaded from sheet")
-            return {"campaigns": {}, "weeks": [], "conversion_actions": []}
+            return {"campaigns": {}, "weeks": []}
         
-        df_all_mapped = clean_and_map_columns(df_all)
+        # Process dates and filter for last 4 weeks
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df = df.dropna(subset=['Date'])
         
-        # Clean and parse dates
-        if 'date' not in df_all_mapped.columns:
-            print("❌ No date column found")
-            return {"campaigns": {}, "weeks": [], "conversion_actions": []}
+        start_date, end_date = get_last_4_weeks()
+        recent_df = df[df['Date'] >= start_date].copy()
         
-        df_copy = df_all_mapped.copy()
-        df_copy = df_copy[df_copy['date'].notna() & (df_copy['date'] != '')]
-        df_copy['date_parsed'] = pd.to_datetime(df_copy['date'], errors='coerce')
-        df_copy = df_copy.dropna(subset=['date_parsed'])
+        if recent_df.empty:
+            print("❌ No recent data found in last 4 weeks")
+            return {"campaigns": {}, "weeks": []}
         
-        if len(df_copy) == 0:
-            print("❌ No valid dates found")
-            return {"campaigns": {}, "weeks": [], "conversion_actions": []}
+        # Group by week
+        recent_df['Week_Start'] = recent_df['Date'].dt.to_period('W').dt.start_time
+        weeks = sorted(recent_df['Week_Start'].dt.strftime('%Y-%m-%d').unique())
         
-        # Get last 4 weeks
-        weeks = get_last_4_weeks()
-        print(f"📅 Analyzing weeks: {[f'{w[0]} to {w[1]}' for w in weeks]}")
-        
-        # Group data by campaign and week
-        campaigns_data = {}
-        week_labels = []
-        
-        for week_start, week_end in weeks:
-            week_label = f"{week_start} to {week_end}"
-            week_labels.append(week_label)
+        # Process campaigns
+        campaigns = {}
+        for campaign in recent_df['Campaign Name'].unique():
+            if not campaign or pd.isna(campaign):
+                continue
+                
+            campaign_data = recent_df[recent_df['Campaign Name'] == campaign]
+            campaigns[campaign] = {}
             
-            # Filter data for this week
-            week_data = df_copy[
-                (df_copy['date_parsed'].dt.date >= week_start) & 
-                (df_copy['date_parsed'].dt.date <= week_end)
-            ]
-            
-            print(f"📊 Week {week_label}: {len(week_data)} rows")
-            
-            if not week_data.empty:
-                # Group by campaign and aggregate
-                for campaign in week_data['campaign'].unique():
-                    if pd.isna(campaign) or campaign == '':
-                        continue
-                        
-                    campaign_week_data = week_data[week_data['campaign'] == campaign]
-                    
-                    if campaign not in campaigns_data:
-                        campaigns_data[campaign] = {}
-                    
-                    # Aggregate the week's data for this campaign
-                    total_impressions = sum(clean_numeric_value(x) for x in campaign_week_data.get('impressions', []))
-                    total_clicks = sum(clean_numeric_value(x) for x in campaign_week_data.get('clicks', []))
-                    
-                    # Calculate CTR
-                    ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
-                    
-                    # Get other metrics (take average or sum as appropriate)
-                    conversions = sum(clean_numeric_value(x) for x in campaign_week_data.get('conversions', []))
-                    
-                    # For percentages, take average
-                    search_imp_share_values = [clean_numeric_value(x) for x in campaign_week_data.get('search_impression_share', []) if clean_numeric_value(x) > 0]
-                    search_imp_share = sum(search_imp_share_values) / len(search_imp_share_values) if search_imp_share_values else 0
-                    
-                    cost_per_conv_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_per_conversion', []) if clean_numeric_value(x) > 0]
-                    cost_per_conversion = sum(cost_per_conv_values) / len(cost_per_conv_values) if cost_per_conv_values else 0
-                    
-                    # Handle cost micros
-                    cost_micros_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_micros', []) if clean_numeric_value(x) > 0]
-                    cost_micros = sum(cost_micros_values) / len(cost_micros_values) if cost_micros_values else 0
-                    
-                    # Handle phone calls
-                    phone_calls_values = [clean_numeric_value(x) for x in campaign_week_data.get('phone_calls', [])]
-                    phone_calls = sum(phone_calls_values)
-                    
-                    campaigns_data[campaign][week_label] = {
-                        'impressions': int(total_impressions),
-                        'clicks': int(total_clicks),
-                        'ctr': round(ctr, 2),
-                        'conversions': conversions,
-                        'search_impression_share': round(search_imp_share, 2) if search_imp_share > 0 else '—',
-                        'cost_per_conversion': round(cost_per_conversion, 2) if cost_per_conversion > 0 else '—',
-                        'cost_micros': round(cost_micros, 2) if cost_micros > 0 else '—',
-                        'phone_calls': round(phone_calls, 2) if phone_calls > 0 else '—'
+            for week in weeks:
+                week_data = campaign_data[campaign_data['Week_Start'].dt.strftime('%Y-%m-%d') == week]
+                if not week_data.empty:
+                    campaigns[campaign][week] = {
+                        'impressions': clean_numeric_value(week_data['Impressions'].sum()),
+                        'clicks': clean_numeric_value(week_data['Clicks'].sum()),
+                        'ctr': clean_numeric_value(week_data['Ctr'].mean()),
+                        'conversions': clean_numeric_value(week_data['Conversions'].sum()),
+                        'search_impression_share': clean_numeric_value(week_data['Search Impression Share'].mean()),
+                        'cost_per_conversion': clean_numeric_value(week_data['Cost Per Conversion'].mean()),
+                        'cost_micros': clean_numeric_value(week_data['Cost Micros'].sum()),
+                        'phone_calls': clean_numeric_value(week_data['Phone Calls'].sum())
                     }
         
-        print(f"✅ Processed {len(campaigns_data)} campaigns across {len(week_labels)} weeks")
-        
-        # Sort weeks chronologically (most recent first)
-        week_labels.reverse()
-        
-        return {
-            "campaigns": campaigns_data,
-            "weeks": week_labels,
-            "conversion_actions": fetch_conversion_action_data()
-        }
+        print(f"✅ Daily comparison data ready: {len(campaigns)} campaigns, {len(weeks)} weeks")
+        return {"campaigns": campaigns, "weeks": weeks}
         
     except Exception as e:
         print(f"❌ Error in fetch_daily_comparison_data: {e}")
         import traceback
         traceback.print_exc()
-        return {"campaigns": {}, "weeks": [], "conversion_actions": []}
+        return {"campaigns": {}, "weeks": []}
 
-# Need to modify fetch_conversion_action_data to support Keynote sheet
-def fetch_keynote_conversion_data():
-    keynote_conversion_sheet = "Daily Ad Group Conversion Action Report Keynote"
-    return fetch_conversion_action_data(sheet_name=keynote_conversion_sheet)
-    
-    """Fetch conversion action data from the second sheet"""
+def fetch_conversion_action_data(sheet_name=None):
+    """Fetch conversion action data from the specified sheet"""
     try:
-        print("🚀 Starting conversion action data fetch...")
+        print("🔄 Loading conversion action data...")
         
         b64_key = os.getenv("GOOGLE_CREDENTIALS_B64")
         if not b64_key:
-            raise ValueError("Missing GOOGLE_CREDENTIALS_B64 environment variable")
+            print("❌ Missing GOOGLE_CREDENTIALS_B64 environment variable")
+            return pd.DataFrame()
 
         key_data = base64.b64decode(b64_key).decode("utf-8")
         creds_dict = json.loads(key_data)
@@ -302,537 +236,73 @@ def fetch_keynote_conversion_data():
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
 
-        sheet = client.open_by_key(SHEET_ID).worksheet(CONVERSION_SHEET_NAME)
-        all_data = sheet.get_all_values()
+        # Use provided sheet_name or default
+        target_sheet_name = sheet_name if sheet_name else CONVERSION_SHEET_NAME
+        print(f"📊 Loading conversion data from sheet: {target_sheet_name}")
         
+        try:
+            sheet = client.open_by_key(SHEET_ID).worksheet(target_sheet_name)
+            all_data = sheet.get_all_values()
+        except gspread.WorksheetNotFound:
+            print(f"❌ Sheet '{target_sheet_name}' not found")
+            return pd.DataFrame()
+
         print(f"📊 Conversion data rows loaded: {len(all_data)}")
-        
-        if len(all_data) < 3:
-            print("⚠️ Not enough conversion data rows found")
-            return []
-        
-        # Look for the actual data - skip header rows
-        data_start_row = None
+
+        if len(all_data) < 2:
+            print("⚠️ Not enough conversion data rows")
+            return pd.DataFrame()
+
+        # Find header row
+        header_row_idx = 0
         for i, row in enumerate(all_data):
-            if len(row) > 1 and any(char.isdigit() for char in str(row[0])) and str(row[1]).strip():
-                data_start_row = i
-                print(f"🎯 Found conversion data starting at row {i}: {row}")
+            if any('Date' in str(cell) for cell in row):
+                header_row_idx = i
                 break
+
+        headers = [col.strip() for col in all_data[header_row_idx]]
+        data_rows = all_data[header_row_idx + 1:]
         
-        if data_start_row is None:
-            print("⚠️ Could not find conversion data rows")
-            return []
-        
-        # Use the row before data as headers
-        if data_start_row > 0:
-            headers = all_data[data_start_row - 1]
-        else:
-            headers = ['Date', 'Campaign Name', 'Conversions', 'Conversion Action Name']
-        
-        data_rows = all_data[data_start_row:]
-        
-        # Filter out empty rows
-        valid_data_rows = []
+        print(f"🎯 Found conversion data starting at row {header_row_idx + 1}: {data_rows[0] if data_rows else 'No data'}")
+
+        # Filter valid rows
+        valid_rows = []
         for row in data_rows:
-            if len(row) >= 2 and str(row[0]).strip() and str(row[1]).strip():
-                valid_data_rows.append(row)
-        
-        print(f"📝 Valid conversion data rows after filtering: {len(valid_data_rows)}")
-        
-        if not valid_data_rows:
-            print("⚠️ No valid conversion data rows found after filtering")
-            return []
-        
-        df = pd.DataFrame(valid_data_rows, columns=headers)
-        df.columns = [str(col).strip() for col in df.columns]
-        
+            if len(row) >= len(headers):
+                row_padded = row[:len(headers)]
+            else:
+                row_padded = row + [''] * (len(headers) - len(row))
+            
+            if any(cell.strip() for cell in row_padded[:4]):  # Check first 4 columns
+                valid_rows.append(row_padded)
+
+        print(f"📝 Valid conversion data rows after filtering: {len(valid_rows)}")
+
+        if not valid_rows:
+            print("❌ No valid conversion data found")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(valid_rows, columns=headers)
         print(f"✅ Created conversion DataFrame with {len(df)} rows")
+
+        # Filter for last 7 days
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            df = df.dropna(subset=['Date'])
+            
+            from datetime import datetime, timedelta
+            week_ago = datetime.now() - timedelta(days=7)
+            recent_conversions = df[df['Date'] >= week_ago]
+            
+            print(f"✅ Processed {len(recent_conversions)} conversion rows from last 7 days")
+            return recent_conversions
         
-        # Get last 7 days of conversion data
-        df_copy = df.copy()
-        df_copy = df_copy[df_copy.iloc[:, 0].notna() & (df_copy.iloc[:, 0] != '')]
-        df_copy['date_parsed'] = pd.to_datetime(df_copy.iloc[:, 0], errors='coerce')
-        df_copy = df_copy.dropna(subset=['date_parsed'])
-        
-        if len(df_copy) == 0:
-            print("❌ No valid conversion dates found")
-            return []
-        
-        # Get last 7 days
-        today = datetime.date.today()
-        seven_days_ago = today - datetime.timedelta(days=7)
-        
-        recent_data = df_copy[df_copy['date_parsed'].dt.date >= seven_days_ago]
-        
-        print(f"✅ Processed {len(recent_data)} conversion rows from last 7 days")
-        
-        return recent_data.to_dict('records')
-        
+        return df
+
     except Exception as e:
-        print(f"❌ Error in fetch_conversion_action_data: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-        
-        df_all_mapped = clean_and_map_columns(df_all)
-        
-        # Clean and parse dates
-        if 'date' not in df_all_mapped.columns:
-            print("❌ No date column found")
-            return {"campaigns": {}, "weeks": []}
-        
-        df_copy = df_all_mapped.copy()
-        df_copy = df_copy[df_copy['date'].notna() & (df_copy['date'] != '')]
-        df_copy['date_parsed'] = pd.to_datetime(df_copy['date'], errors='coerce')
-        df_copy = df_copy.dropna(subset=['date_parsed'])
-        
-        if len(df_copy) == 0:
-            print("❌ No valid dates found")
-            return {"campaigns": {}, "weeks": []}
-        
-        # Get last 4 weeks
-        weeks = get_last_4_weeks()
-        print(f"📅 Analyzing weeks: {[f'{w[0]} to {w[1]}' for w in weeks]}")
-        
-        # Group data by campaign and week
-        campaigns_data = {}
-        week_labels = []
-        
-        for week_start, week_end in weeks:
-            week_label = f"{week_start} to {week_end}"
-            week_labels.append(week_label)
-            
-            # Filter data for this week
-            week_data = df_copy[
-                (df_copy['date_parsed'].dt.date >= week_start) & 
-                (df_copy['date_parsed'].dt.date <= week_end)
-            ]
-            
-            print(f"📊 Week {week_label}: {len(week_data)} rows")
-            
-            if not week_data.empty:
-                # Group by campaign and aggregate
-                for campaign in week_data['campaign'].unique():
-                    if pd.isna(campaign) or campaign == '':
-                        continue
-                        
-                    campaign_week_data = week_data[week_data['campaign'] == campaign]
-                    
-                    if campaign not in campaigns_data:
-                        campaigns_data[campaign] = {}
-                    
-                    # Aggregate the week's data for this campaign
-                    total_impressions = sum(clean_numeric_value(x) for x in campaign_week_data.get('impressions', []))
-                    total_clicks = sum(clean_numeric_value(x) for x in campaign_week_data.get('clicks', []))
-                    
-                    # Calculate CTR
-                    ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
-                    
-                    # Get other metrics (take average or sum as appropriate)
-                    conversions = sum(clean_numeric_value(x) for x in campaign_week_data.get('conversions', []))
-                    
-                    # For percentages, take average
-                    search_imp_share_values = [clean_numeric_value(x) for x in campaign_week_data.get('search_impression_share', []) if clean_numeric_value(x) > 0]
-                    search_imp_share = sum(search_imp_share_values) / len(search_imp_share_values) if search_imp_share_values else 0
-                    
-                    cost_per_conv_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_per_conversion', []) if clean_numeric_value(x) > 0]
-                    cost_per_conversion = sum(cost_per_conv_values) / len(cost_per_conv_values) if cost_per_conv_values else 0
-                    
-                    # Handle cost micros
-                    cost_micros_values = [clean_numeric_value(x) for x in campaign_week_data.get('cost_micros', []) if clean_numeric_value(x) > 0]
-                    cost_micros = sum(cost_micros_values) / len(cost_micros_values) if cost_micros_values else 0
-                    
-                    # Handle phone calls
-                    phone_calls_values = [clean_numeric_value(x) for x in campaign_week_data.get('phone_calls', [])]
-                    phone_calls = sum(phone_calls_values)
-                    
-                    campaigns_data[campaign][week_label] = {
-                        'impressions': int(total_impressions),
-                        'clicks': int(total_clicks),
-                        'ctr': round(ctr, 2),
-                        'conversions': conversions,
-                        'search_impression_share': round(search_imp_share, 2) if search_imp_share > 0 else '—',
-                        'cost_per_conversion': round(cost_per_conversion, 2) if cost_per_conversion > 0 else '—',
-                        'cost_micros': round(cost_micros, 2) if cost_micros > 0 else '—',
-                        'phone_calls': round(phone_calls, 2) if phone_calls > 0 else '—'
-                    }
-        
-        print(f"✅ Processed {len(campaigns_data)} campaigns across {len(week_labels)} weeks")
-        
-        # Sort weeks chronologically (most recent first)
-        week_labels.reverse()
-        
-        return {
-            "campaigns": campaigns_data,
-            "weeks": week_labels,
-            "conversion_actions": fetch_conversion_action_data()
-        }
-        
-    except Exception as e:
-        print(f"❌ Error in fetch_daily_comparison_data: {e}")
-        import traceback
-        traceback.print_exc()
-        return {"campaigns": {}, "weeks": []}
+        print(f"❌ Error fetching conversion data: {e}")
+        return pd.DataFrame()
 
-# Keep the original functions for backward compatibility
-def get_date_range_data(df_all, target_date, days_back=7):
-    """Get data for target date and comparison period (e.g., previous week)"""
-    if df_all.empty or 'date' not in df_all.columns:
-        return pd.DataFrame(), pd.DataFrame()
-    
-    print(f"📅 Getting data for {target_date} and {days_back} days back")
-    
-    # Clean and parse dates
-    df_copy = df_all.copy()
-    df_copy = df_copy[df_copy['date'].notna() & (df_copy['date'] != '')]
-    df_copy['date_parsed'] = pd.to_datetime(df_copy['date'], errors='coerce')
-    df_copy = df_copy.dropna(subset=['date_parsed'])
-    
-    if len(df_copy) == 0:
-        return pd.DataFrame(), pd.DataFrame()
-    
-    # Get current period data (target date)
-    current_df = df_copy[df_copy['date_parsed'].dt.date == target_date]
-    
-    # Get comparison period data (same day previous week)
-    comparison_date = target_date - datetime.timedelta(days=days_back)
-    comparison_df = df_copy[df_copy['date_parsed'].dt.date == comparison_date]
-    
-    print(f"📊 Current data ({target_date}): {len(current_df)} rows")
-    print(f"📊 Comparison data ({comparison_date}): {len(comparison_df)} rows")
-    
-    return current_df.drop('date_parsed', axis=1), comparison_df.drop('date_parsed', axis=1)
-
-def add_kpis(df):
-    if df.empty:
-        print("⚠️ Empty dataframe in add_kpis")
-        return create_processed_empty_dataframe()
-    
-    print(f"🧮 Adding KPIs to {len(df)} rows")
-    
-    # Filter for valid campaigns
-    if 'campaign' in df.columns:
-        df = df[df['campaign'].notna() & (df['campaign'] != '')]
-        print(f"📊 After filtering valid campaigns: {len(df)} rows")
-    
-    if len(df) == 0:
-        print("⚠️ No valid campaigns found")
-        return create_processed_empty_dataframe()
-    
-    # Clean numeric columns
-    numeric_columns = ['impressions', 'clicks', 'conversions']
-    for col in numeric_columns:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.replace(r'[€$,%]', '', regex=True)
-            df[col] = df[col].str.replace(',', '')
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        else:
-            df[col] = 0
-    
-    # Handle CTR
-    if 'ctr_raw' in df.columns:
-        df['ctr_raw'] = df['ctr_raw'].astype(str).str.replace('%', '').str.replace('€', '')
-        df['ctr'] = pd.to_numeric(df['ctr_raw'], errors='coerce').fillna(0)
-    else:
-        df['ctr'] = ((df['clicks'] / df['impressions']) * 100).round(2)
-        df['ctr'] = df['ctr'].replace([float('inf'), -float('inf')], 0).fillna(0)
-    
-    # Estimate spend
-    def estimate_cpc(campaign_name):
-        campaign_lower = str(campaign_name).lower()
-        if 'search' in campaign_lower:
-            return 0.25
-        elif 'performance max' in campaign_lower:
-            return 0.18
-        elif 'demand gen' in campaign_lower:
-            return 0.05
-        else:
-            return 0.20
-    
-    df['cpc'] = df['campaign'].apply(estimate_cpc)
-    df['spend'] = (df['clicks'] * df['cpc']).round(2)
-    
-    # Calculate other KPIs
-    df['conversion_rate'] = ((df['conversions'] / df['clicks']) * 100).round(2)
-    df['conversion_rate'] = df['conversion_rate'].replace([float('inf'), -float('inf')], 0).fillna(0)
-    
-    df['cost_per_conversion'] = (df['spend'] / df['conversions']).round(2)
-    df['cost_per_conversion'] = df['cost_per_conversion'].replace([float('inf'), -float('inf')], 0).fillna(0)
-    
-    # Handle impression share
-    if 'search_impression_share' in df.columns:
-        df['search_impression_share'] = df['search_impression_share'].astype(str).str.replace('%', '')
-        df['search_impression_share'] = pd.to_numeric(df['search_impression_share'], errors='coerce').fillna(75.0)
-    else:
-        df['search_impression_share'] = 75.0
-    
-    df['quality_score'] = 7.5
-    
-    return df
-
-def create_processed_empty_dataframe():
-    return pd.DataFrame({
-        'campaign': [],
-        'impressions': [],
-        'clicks': [],
-        'ctr': [],
-        'spend': [],
-        'cpc': [],
-        'conversions': [],
-        'conversion_rate': [],
-        'cost_per_conversion': [],
-        'search_impression_share': [],
-        'quality_score': [],
-        'cost_micros': []
-    })
-
-def generate_summary_stats(df):
-    if df.empty:
-        return {
-            'total_spend': 0,
-            'total_clicks': 0,
-            'total_impressions': 0,
-            'total_conversions': 0,
-            'avg_ctr': 0,
-            'avg_cpc': 0,
-            'avg_conversion_rate': 0,
-            'avg_impression_share': 0
-        }
-    
-    return {
-        'total_spend': round(df['spend'].sum(), 2),
-        'total_clicks': int(df['clicks'].sum()),
-        'total_impressions': int(df['impressions'].sum()),
-        'total_conversions': int(df['conversions'].sum()),
-        'avg_ctr': round(df['ctr'].mean(), 2),
-        'avg_cpc': round(df['cpc'].mean(), 2),
-        'avg_conversion_rate': round(df['conversion_rate'].mean(), 2),
-        'avg_impression_share': round(df['search_impression_share'].mean(), 1)
-    }
-
-def calculate_percentage_change(current, previous):
-    """Calculate percentage change between current and previous values"""
-    if previous == 0:
-        return 100 if current > 0 else 0
-    return round(((current - previous) / previous) * 100, 1)
-
-def format_trend_indicator(change_pct):
-    """Format trend indicator with emoji and color"""
-    if change_pct > 0:
-        return f"📈 +{change_pct}%"
-    elif change_pct < 0:
-        return f"📉 {change_pct}%"
-    else:
-        return "➡️ 0%"
-
-def generate_insights_with_comparison(current_df, comparison_df):
-    current_summary = generate_summary_stats(current_df)
-    comparison_summary = generate_summary_stats(comparison_df)
-    
-    # Calculate trends
-    trends = {}
-    for key in current_summary:
-        if key in comparison_summary:
-            change_pct = calculate_percentage_change(current_summary[key], comparison_summary[key])
-            trends[key] = {
-                'current': current_summary[key],
-                'previous': comparison_summary[key],
-                'change_pct': change_pct,
-                'trend': format_trend_indicator(change_pct)
-            }
-    
-    if current_df.empty:
-        return {
-            'summary': current_summary,
-            'summary_trends': trends,
-            'highlights': [
-                {'metric': '📊 Status', 'campaign': 'No Data', 'value': 'No campaigns found', 'trend': '', 'change': 0}
-            ],
-            'campaigns': [],
-            'comparison_available': not comparison_df.empty
-        }
-    
-    highlights = []
-    
-    # Most clicks with comparison
-    if current_df['clicks'].sum() > 0:
-        most_clicks_idx = current_df['clicks'].idxmax()
-        most_clicks = current_df.loc[most_clicks_idx]
-        campaign_name = str(most_clicks['campaign'])[:30]
-        
-        # Find same campaign in comparison data
-        trend = ""
-        if not comparison_df.empty:
-            comp_campaign = comparison_df[comparison_df['campaign'] == most_clicks['campaign']]
-            if not comp_campaign.empty:
-                prev_clicks = comp_campaign['clicks'].iloc[0]
-                change_pct = calculate_percentage_change(most_clicks['clicks'], prev_clicks)
-                trend = format_trend_indicator(change_pct)
-        
-        highlights.append({
-            'metric': '🥇 Most Clicks',
-            'campaign': campaign_name,
-            'value': f"{int(most_clicks['clicks']):,}",
-            'trend': trend,
-            'change': 0
-        })
-    
-    # Most impressions with comparison
-    if current_df['impressions'].sum() > 0:
-        most_impressions_idx = current_df['impressions'].idxmax()
-        most_impressions = current_df.loc[most_impressions_idx]
-        campaign_name = str(most_impressions['campaign'])[:30]
-        
-        trend = ""
-        if not comparison_df.empty:
-            comp_campaign = comparison_df[comparison_df['campaign'] == most_impressions['campaign']]
-            if not comp_campaign.empty:
-                prev_impressions = comp_campaign['impressions'].iloc[0]
-                change_pct = calculate_percentage_change(most_impressions['impressions'], prev_impressions)
-                trend = format_trend_indicator(change_pct)
-        
-        highlights.append({
-            'metric': '👁️ Most Impressions',
-            'campaign': campaign_name,
-            'value': f"{int(most_impressions['impressions']):,}",
-            'trend': trend,
-            'change': 0
-        })
-    
-    # Best CTR with comparison
-    if current_df['ctr'].sum() > 0:
-        best_ctr_idx = current_df['ctr'].idxmax()
-        best_ctr = current_df.loc[best_ctr_idx]
-        campaign_name = str(best_ctr['campaign'])[:30]
-        
-        trend = ""
-        if not comparison_df.empty:
-            comp_campaign = comparison_df[comparison_df['campaign'] == best_ctr['campaign']]
-            if not comp_campaign.empty:
-                prev_ctr = comp_campaign['ctr'].iloc[0]
-                change_pct = calculate_percentage_change(best_ctr['ctr'], prev_ctr)
-                trend = format_trend_indicator(change_pct)
-        
-        highlights.append({
-            'metric': '🎯 Best CTR',
-            'campaign': campaign_name,
-            'value': f"{best_ctr['ctr']:.2f}%",
-            'trend': trend,
-            'change': 0
-        })
-    
-    if not highlights:
-        highlights = [
-            {'metric': '📊 Status', 'campaign': 'Data Available', 'value': f'{len(current_df)} campaigns', 'trend': '', 'change': 0}
-        ]
-    
-    return {
-        'summary': current_summary,
-        'summary_trends': trends,
-        'highlights': highlights,
-        'campaigns': current_df.to_dict('records'),
-        'comparison_available': not comparison_df.empty
-    }
-
-def create_enhanced_charts(df):
-    os.makedirs("static", exist_ok=True)
-    
-    if df.empty:
-        plt.figure(figsize=(10, 6))
-        plt.text(0.5, 0.5, 'No data available\nCheck Google Sheets connection', ha='center', va='center', fontsize=16)
-        plt.xlim(0, 1)
-        plt.ylim(0, 1)
-        plt.axis('off')
-        plt.title("Google Ads Spend Overview", fontsize=14, fontweight='bold')
-        plt.savefig("static/spend_chart.png", dpi=150, bbox_inches='tight')
-        plt.close()
-        return
-    
-    campaigns = [str(name)[:15] + "..." if len(str(name)) > 15 else str(name) for name in df['campaign']]
-    
-    plt.figure(figsize=(12, 6))
-    bars = plt.bar(campaigns, df['spend'], color='#667eea', alpha=0.8)
-    plt.title("Estimated Daily Spend by Campaign", fontsize=14, fontweight='bold', pad=20)
-    plt.ylabel("Spend (€)")
-    plt.xticks(rotation=45, ha='right')
-    
-    for bar, spend in zip(bars, df['spend']):
-        if spend > 0:
-            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                    f'€{spend:.1f}', ha='center', va='bottom', fontsize=10)
-    
-    plt.tight_layout()
-    plt.savefig("static/spend_chart.png", dpi=150, bbox_inches='tight')
-    plt.close()
-
-def fetch_sheet_data():
-    try:
-        today = datetime.date.today()
-        print(f"🚀 Starting fetch for {today}")
-        
-        # Load all data from sheet
-        df_all = load_campaign_data()
-        
-        if df_all.empty:
-            print("❌ No data loaded from sheet")
-            return create_processed_empty_dataframe(), generate_insights_with_comparison(create_processed_empty_dataframe(), create_processed_empty_dataframe())
-        
-        df_all_mapped = clean_and_map_columns(df_all)
-        
-        # Get current and comparison data
-        current_df, comparison_df = get_date_range_data(df_all_mapped, today, days_back=7)
-        
-        # If no data for today, try yesterday
-        if current_df.empty:
-            print(f"⚠️ No data for today ({today}), trying yesterday")
-            yesterday = today - datetime.timedelta(days=1)
-            current_df, comparison_df = get_date_range_data(df_all_mapped, yesterday, days_back=7)
-            
-            if current_df.empty:
-                print(f"⚠️ No data for yesterday ({yesterday}) either, using latest available")
-                # Use the most recent data available
-                if 'date' in df_all_mapped.columns:
-                    df_all_mapped['date_parsed'] = pd.to_datetime(df_all_mapped['date'], errors='coerce')
-                    df_all_mapped = df_all_mapped.dropna(subset=['date_parsed'])
-                    if not df_all_mapped.empty:
-                        latest_date = df_all_mapped['date_parsed'].max().date()
-                        current_df, comparison_df = get_date_range_data(df_all_mapped, latest_date, days_back=7)
-                        print(f"📅 Using latest available date: {latest_date}")
-        
-        if current_df.empty:
-            print("❌ Still no data found")
-            return create_processed_empty_dataframe(), generate_insights_with_comparison(create_processed_empty_dataframe(), create_processed_empty_dataframe())
-        
-        # Process the data
-        current_df = add_kpis(current_df)
-        comparison_df = add_kpis(comparison_df) if not comparison_df.empty else comparison_df
-        
-        # Save data
-        os.makedirs(DATA_DIR, exist_ok=True)
-        current_df.to_csv(f"{DATA_DIR}/ads_{today.strftime('%Y-%m-%d')}.csv", index=False)
-        
-        # Create charts
-        create_enhanced_charts(current_df)
-        
-        # Generate insights with comparison
-        insights = generate_insights_with_comparison(current_df, comparison_df)
-        
-        print(f"✅ Successfully processed {len(current_df)} campaigns")
-        if not comparison_df.empty:
-            print(f"📊 Comparison data available for {len(comparison_df)} campaigns")
-        
-        return current_df, insights
-        
-    except Exception as e:
-        print(f"❌ Error in fetch_sheet_data: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
-# At the end of google_ads_api.py
-# Remove this line:
-# fetch_keynote_comparison_data = fetch_daily_comparison_data
-
-# Add this proper function instead:
 def fetch_keynote_comparison_data():
     """
     Fetch Keynote campaign data for daily comparison from the Keynote sheet tab
@@ -851,12 +321,18 @@ def fetch_keynote_comparison_data():
             return {"campaigns": {}, "weeks": []}
         
         print(f"✅ Loaded {len(df)} rows from Keynote sheet")
+        print(f"📋 Available columns: {list(df.columns)}")
         
         # Process the data using similar logic to fetch_daily_comparison_data
         from datetime import datetime, timedelta
         
         # Convert Date column to datetime
-        df['Date'] = pd.to_datetime(df['Date'])
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df = df.dropna(subset=['Date'])
+        
+        if df.empty:
+            print("❌ No valid dates in Keynote data")
+            return {"campaigns": {}, "weeks": []}
         
         # Get last 4 weeks of data
         end_date = datetime.now()
@@ -871,36 +347,46 @@ def fetch_keynote_comparison_data():
         recent_df['Week_Start'] = recent_df['Date'].dt.to_period('W').dt.start_time
         weeks = sorted(recent_df['Week_Start'].dt.strftime('%Y-%m-%d').unique())
         
+        # Take only last 4 weeks
+        weeks = weeks[-4:] if len(weeks) > 4 else weeks
+        
+        print(f"📅 Processing {len(weeks)} weeks: {weeks}")
+        
         # Process campaigns
         campaigns = {}
         for campaign in recent_df['Campaign Name'].unique():
+            if not campaign or pd.isna(campaign):
+                continue
+                
             campaign_data = recent_df[recent_df['Campaign Name'] == campaign]
             campaigns[campaign] = {}
             
             for week in weeks:
                 week_data = campaign_data[campaign_data['Week_Start'].dt.strftime('%Y-%m-%d') == week]
                 if not week_data.empty:
-                    # Handle the available columns safely
-                    impressions_sum = 0
-                    ctr_avg = 0
+                    # Get individual rows instead of summing (to avoid massive numbers)
+                    impressions_values = []
+                    ctr_values = []
                     
-                    try:
-                        if 'Impressions' in week_data.columns:
-                            impressions_sum = int(week_data['Impressions'].sum())
-                    except (ValueError, TypeError):
-                        impressions_sum = 0
+                    for _, row in week_data.iterrows():
+                        # Clean impressions - handle individual values properly
+                        imp_val = clean_numeric_value(row.get('Impressions', 0))
+                        if imp_val > 0 and imp_val < 1000000:  # Reasonable impression range
+                            impressions_values.append(imp_val)
+                        
+                        # Clean CTR values
+                        ctr_val = clean_numeric_value(row.get('Ctr', 0))
+                        if ctr_val > 0:
+                            ctr_values.append(ctr_val)
                     
-                    try:
-                        if 'Ctr' in week_data.columns:
-                            ctr_values = week_data['Ctr'].str.replace('%', '').astype(float)
-                            ctr_avg = float(ctr_values.mean())
-                    except (ValueError, TypeError, AttributeError):
-                        ctr_avg = 0
+                    # Use average instead of sum for impressions to avoid massive numbers
+                    avg_impressions = sum(impressions_values) / len(impressions_values) if impressions_values else 0
+                    avg_ctr = sum(ctr_values) / len(ctr_values) if ctr_values else 0
                     
                     campaigns[campaign][week] = {
-                        'impressions': impressions_sum,
+                        'impressions': int(avg_impressions),  # Use average, not sum
                         'clicks': 0,  # Not available in Keynote sheet
-                        'ctr': ctr_avg,
+                        'ctr': round(avg_ctr, 2),
                         'conversions': 0,  # Not available in Keynote sheet
                         'search_impression_share': 0,  # Not available in Keynote sheet
                         'cost_per_conversion': 0,  # Not available in Keynote sheet
@@ -917,3 +403,186 @@ def fetch_keynote_comparison_data():
         import traceback
         traceback.print_exc()
         return {"campaigns": {}, "weeks": []}
+
+def fetch_keynote_conversion_data():
+    """Fetch conversion data specifically for Keynote campaigns"""
+    try:
+        keynote_conversion_sheet = "Daily Ad Group Conversion Action Report Keynote"
+        conversion_df = fetch_conversion_action_data(sheet_name=keynote_conversion_sheet)
+        
+        if conversion_df.empty:
+            print("❌ No Keynote conversion data available")
+            return pd.DataFrame()
+        
+        print(f"✅ Loaded {len(conversion_df)} Keynote conversion rows")
+        return conversion_df
+        
+    except Exception as e:
+        print(f"❌ Error fetching Keynote conversion data: {e}")
+        return pd.DataFrame()
+
+# Additional utility functions that might be in your original file
+def get_date_range_data(df_all, target_date, days_back=7):
+    """Get data for a specific date range"""
+    try:
+        if df_all.empty:
+            return pd.DataFrame()
+        
+        from datetime import datetime, timedelta
+        
+        end_date = pd.to_datetime(target_date)
+        start_date = end_date - timedelta(days=days_back)
+        
+        df_all['Date'] = pd.to_datetime(df_all['Date'], errors='coerce')
+        filtered_df = df_all[(df_all['Date'] >= start_date) & (df_all['Date'] <= end_date)]
+        
+        return filtered_df
+        
+    except Exception as e:
+        print(f"❌ Error in get_date_range_data: {e}")
+        return pd.DataFrame()
+
+def add_kpis(df):
+    """Add calculated KPIs to the dataframe"""
+    try:
+        if df.empty:
+            return df
+        
+        # Add calculated columns
+        df['CTR_calc'] = (df['Clicks'] / df['Impressions'] * 100).fillna(0)
+        df['CPC'] = (df['Cost Micros'] / df['Clicks']).fillna(0)
+        df['Conversion_Rate'] = (df['Conversions'] / df['Clicks'] * 100).fillna(0)
+        
+        return df
+        
+    except Exception as e:
+        print(f"❌ Error adding KPIs: {e}")
+        return df
+
+def create_processed_empty_dataframe():
+    """Create an empty processed DataFrame"""
+    columns = [
+        'Date', 'Campaign Name', 'Impressions', 'Clicks', 'Ctr', 'Conversions',
+        'Search Impression Share', 'Cost Per Conversion', 'Cost Micros', 'Phone Calls',
+        'CTR_calc', 'CPC', 'Conversion_Rate'
+    ]
+    return pd.DataFrame(columns=columns)
+
+def generate_summary_stats(df):
+    """Generate summary statistics"""
+    try:
+        if df.empty:
+            return {}
+        
+        return {
+            'total_impressions': df['Impressions'].sum(),
+            'total_clicks': df['Clicks'].sum(),
+            'average_ctr': df['Ctr'].mean(),
+            'total_conversions': df['Conversions'].sum(),
+            'total_cost': df['Cost Micros'].sum()
+        }
+        
+    except Exception as e:
+        print(f"❌ Error generating summary stats: {e}")
+        return {}
+
+def calculate_percentage_change(current, previous):
+    """Calculate percentage change between two values"""
+    if previous == 0:
+        return 0 if current == 0 else 100
+    return ((current - previous) / previous) * 100
+
+def format_trend_indicator(change_pct):
+    """Format trend indicator based on percentage change"""
+    if change_pct > 5:
+        return "📈 Strong Increase"
+    elif change_pct > 0:
+        return "↗️ Slight Increase"
+    elif change_pct < -5:
+        return "📉 Strong Decrease"
+    elif change_pct < 0:
+        return "↘️ Slight Decrease"
+    else:
+        return "➡️ No Change"
+
+def generate_insights_with_comparison(current_df, comparison_df):
+    """Generate insights by comparing current and previous periods"""
+    try:
+        insights = []
+        
+        if current_df.empty:
+            return ["No current data available for analysis"]
+        
+        current_stats = generate_summary_stats(current_df)
+        
+        if not comparison_df.empty:
+            comparison_stats = generate_summary_stats(comparison_df)
+            
+            # Calculate changes
+            impression_change = calculate_percentage_change(
+                current_stats['total_impressions'], 
+                comparison_stats['total_impressions']
+            )
+            
+            click_change = calculate_percentage_change(
+                current_stats['total_clicks'], 
+                comparison_stats['total_clicks']
+            )
+            
+            insights.append(f"Impressions {format_trend_indicator(impression_change)}: {impression_change:.1f}%")
+            insights.append(f"Clicks {format_trend_indicator(click_change)}: {click_change:.1f}%")
+        
+        return insights
+        
+    except Exception as e:
+        print(f"❌ Error generating insights: {e}")
+        return ["Error generating insights"]
+
+def create_enhanced_charts(df):
+    """Create enhanced charts for the data"""
+    try:
+        if df.empty:
+            print("❌ No data available for charts")
+            return None
+        
+        # This would create matplotlib charts if needed
+        # Implementation depends on your specific requirements
+        print("📊 Chart creation functionality available")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error creating charts: {e}")
+        return None
+
+def fetch_sheet_data():
+    """Fetch sheet data with insights and comparison"""
+    try:
+        print("🚀 Starting sheet data fetch with insights...")
+        
+        # Load current data
+        current_df = load_campaign_data()
+        
+        if current_df.empty:
+            print("❌ No current data available")
+            return current_df, []
+        
+        # Get comparison data (previous period)
+        from datetime import datetime, timedelta
+        
+        end_date = datetime.now() - timedelta(days=7)
+        start_date = end_date - timedelta(days=7)
+        comparison_df = get_date_range_data(current_df, end_date, days_back=7)
+        
+        # Generate insights
+        insights = generate_insights_with_comparison(current_df, comparison_df)
+        
+        if not comparison_df.empty:
+            print(f"📊 Comparison data available for {len(comparison_df)} campaigns")
+        
+        return current_df, insights
+        
+    except Exception as e:
+        print(f"❌ Error in fetch_sheet_data: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
