@@ -13,7 +13,7 @@ SHEET_ID = "1rBjY6_AeDIG-1UEp3JvA44CKLAqn3JAGFttixkcRaKg"
 SHEET_NAME = "Daily Ad Group Performance Report"
 CONVERSION_SHEET_NAME = "Daily Ad Group Conversion Action Report"
 
-def load_campaign_data(sheet_name=None):
+def load_campaign_data():
     try:
         b64_key = os.getenv("GOOGLE_CREDENTIALS_B64")
         if not b64_key:
@@ -26,9 +26,7 @@ def load_campaign_data(sheet_name=None):
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
 
-        target_sheet_name = sheet_name if sheet_name else SHEET_NAME
-        print(f"📊 Loading data from sheet: {target_sheet_name}")
-        sheet = client.open_by_key(SHEET_ID).worksheet(target_sheet_name)
+        sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
         all_data = sheet.get_all_values()
         
         print(f"📊 Total rows loaded: {len(all_data)}")
