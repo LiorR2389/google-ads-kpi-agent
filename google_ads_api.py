@@ -293,10 +293,11 @@ def fetch_conversion_action_data(sheet_name=None):
             print("⚠️ Not enough conversion data rows")
             return pd.DataFrame()
 
-        # Find header row
+        # Find header row - look for Date, Campaign, Conversions keywords
         header_row_idx = 0
         for i, row in enumerate(all_data):
-            if any('Date' in str(cell) for cell in row):
+            row_str = ' '.join(str(cell).lower() for cell in row)
+            if 'date' in row_str and ('campaign' in row_str or 'conversions' in row_str):
                 header_row_idx = i
                 break
 
@@ -304,8 +305,9 @@ def fetch_conversion_action_data(sheet_name=None):
         data_rows = all_data[header_row_idx + 1:]
         
         print(f"🎯 Found conversion data starting at row {header_row_idx + 1}: {data_rows[0] if data_rows else 'No data'}")
+        print(f"📋 Conversion headers: {headers}")
 
-        # Filter valid rows
+        # Filter valid rows - must have Date, Campaign Name, and Conversions data
         valid_rows = []
         for row in data_rows:
             if len(row) >= len(headers):
@@ -313,7 +315,11 @@ def fetch_conversion_action_data(sheet_name=None):
             else:
                 row_padded = row + [''] * (len(headers) - len(row))
             
-            if any(cell.strip() for cell in row_padded[:4]):  # Check first 4 columns
+            # Check if row has date, campaign name, and conversion data
+            if (len(row_padded) >= 3 and 
+                row_padded[0].strip() and  # Date
+                row_padded[2].strip() and  # Campaign Name (3rd column)
+                row_padded[3].strip()):    # Conversions (4th column)
                 valid_rows.append(row_padded)
 
         print(f"📝 Valid conversion data rows after filtering: {len(valid_rows)}")
@@ -325,7 +331,20 @@ def fetch_conversion_action_data(sheet_name=None):
         df = pd.DataFrame(valid_rows, columns=headers)
         print(f"✅ Created conversion DataFrame with {len(df)} rows")
 
-        # Filter for last 7 days
+        # Clean up column names to standard format
+        column_mapping = {
+            'Date': 'Date',
+            'Conversion Action Name': 'Conversion Action',
+            'Campaign Name': 'Campaign Name', 
+            'Conversions': 'Conversions'
+        }
+        
+        # Rename columns if they exist
+        for old_name, new_name in column_mapping.items():
+            if old_name in df.columns:
+                df = df.rename(columns={old_name: new_name})
+
+        # Filter for last 7 days if Date column exists
         if 'Date' in df.columns:
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
             df = df.dropna(subset=['Date'])
@@ -334,6 +353,10 @@ def fetch_conversion_action_data(sheet_name=None):
             week_ago = datetime.now() - timedelta(days=7)
             recent_conversions = df[df['Date'] >= week_ago]
             
+            # Clean conversions column
+            if 'Conversions' in recent_conversions.columns:
+                recent_conversions['Conversions'] = recent_conversions['Conversions'].apply(clean_numeric_value)
+            
             print(f"✅ Processed {len(recent_conversions)} conversion rows from last 7 days")
             return recent_conversions
         
@@ -341,6 +364,8 @@ def fetch_conversion_action_data(sheet_name=None):
 
     except Exception as e:
         print(f"❌ Error fetching conversion data: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
 
 def fetch_keynote_comparison_data():
@@ -415,7 +440,19 @@ def fetch_keynote_comparison_data():
                         'phone_calls': int(safe_numeric_sum(week_data['Phone Calls']))
                     }
         
-        result = {"campaigns": campaigns, "weeks": weeks}
+        # Also fetch conversion data for the return structure
+        try:
+            conversion_df = fetch_keynote_conversion_data()
+            print(f"🔄 Keynote conversion data: {len(conversion_df)} rows")
+        except Exception as conv_error:
+            print(f"⚠️ Could not fetch Keynote conversions: {conv_error}")
+            conversion_df = pd.DataFrame()
+        
+        result = {
+            "campaigns": campaigns, 
+            "weeks": weeks,
+            "conversions": conversion_df  # Add conversion data to result
+        }
         print(f"✅ Keynote comparison data ready: {len(campaigns)} campaigns, {len(weeks)} weeks")
         return result
         
@@ -423,23 +460,45 @@ def fetch_keynote_comparison_data():
         print(f"❌ Error in fetch_keynote_comparison_data: {e}")
         import traceback
         traceback.print_exc()
-        return {"campaigns": {}, "weeks": []}
+        return {"campaigns": {}, "weeks": [], "conversions": pd.DataFrame()}
 
 def fetch_keynote_conversion_data():
     """Fetch conversion data specifically for Keynote campaigns"""
     try:
-        keynote_conversion_sheet = "Daily Ad Group Conversion Action Report Keynote"
-        conversion_df = fetch_conversion_action_data(sheet_name=keynote_conversion_sheet)
+        # The sheet name from your data appears to be "Google Ads Import"
+        # But let's try the standard naming first, then fallback
+        possible_sheet_names = [
+            "Daily Ad Group Conversion Action Report Keynote",
+            "Google Ads Import", 
+            "Conversion Action Report Keynote"
+        ]
+        
+        conversion_df = pd.DataFrame()
+        
+        for sheet_name in possible_sheet_names:
+            print(f"🔍 Trying conversion sheet: {sheet_name}")
+            try:
+                conversion_df = fetch_conversion_action_data(sheet_name=sheet_name)
+                if not conversion_df.empty:
+                    print(f"✅ Found Keynote conversion data in sheet: {sheet_name}")
+                    break
+            except Exception as e:
+                print(f"⚠️ Failed to load from {sheet_name}: {e}")
+                continue
         
         if conversion_df.empty:
-            print("❌ No Keynote conversion data available")
+            print("❌ No Keynote conversion data available in any sheet")
             return pd.DataFrame()
         
         print(f"✅ Loaded {len(conversion_df)} Keynote conversion rows")
+        print(f"📋 Sample data: {conversion_df.head(2).to_dict('records') if len(conversion_df) > 0 else 'No data'}")
+        
         return conversion_df
         
     except Exception as e:
         print(f"❌ Error fetching Keynote conversion data: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
 
 # Additional utility functions
