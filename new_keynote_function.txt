@@ -1,0 +1,84 @@
+def fetch_keynote_comparison_data():
+    """
+    Fetch Keynote campaign data for daily comparison from the Keynote sheet tab
+    """
+    try:
+        print("🚀 Starting Keynote daily comparison data fetch...")
+        
+        # Use the Keynote-specific sheet name
+        keynote_sheet_name = "Daily Ad Group Performance Report Keynote"
+        
+        # Load data from the Keynote sheet
+        df = load_campaign_data(sheet_name=keynote_sheet_name)
+        
+        if df is None or df.empty:
+            print(f"❌ No data found in {keynote_sheet_name} sheet")
+            return {"campaigns": {}, "weeks": []}
+        
+        print(f"✅ Loaded {len(df)} rows from Keynote sheet")
+        
+        # Process the data using similar logic to fetch_daily_comparison_data
+        from datetime import datetime, timedelta
+        
+        # Convert Date column to datetime
+        df['Date'] = pd.to_datetime(df['Date'])
+        
+        # Get last 4 weeks of data
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=28)
+        recent_df = df[df['Date'] >= start_date].copy()
+        
+        if recent_df.empty:
+            print("❌ No recent Keynote data found in last 4 weeks")
+            return {"campaigns": {}, "weeks": []}
+        
+        # Group by week
+        recent_df['Week_Start'] = recent_df['Date'].dt.to_period('W').dt.start_time
+        weeks = sorted(recent_df['Week_Start'].dt.strftime('%Y-%m-%d').unique())
+        
+        # Process campaigns
+        campaigns = {}
+        for campaign in recent_df['Campaign Name'].unique():
+            campaign_data = recent_df[recent_df['Campaign Name'] == campaign]
+            campaigns[campaign] = {}
+            
+            for week in weeks:
+                week_data = campaign_data[campaign_data['Week_Start'].dt.strftime('%Y-%m-%d') == week]
+                if not week_data.empty:
+                    # Handle the available columns safely
+                    impressions_sum = 0
+                    ctr_avg = 0
+                    
+                    try:
+                        if 'Impressions' in week_data.columns:
+                            impressions_sum = int(week_data['Impressions'].sum())
+                    except (ValueError, TypeError):
+                        impressions_sum = 0
+                    
+                    try:
+                        if 'Ctr' in week_data.columns:
+                            ctr_values = week_data['Ctr'].str.replace('%', '').astype(float)
+                            ctr_avg = float(ctr_values.mean())
+                    except (ValueError, TypeError, AttributeError):
+                        ctr_avg = 0
+                    
+                    campaigns[campaign][week] = {
+                        'impressions': impressions_sum,
+                        'clicks': 0,  # Not available in Keynote sheet
+                        'ctr': ctr_avg,
+                        'conversions': 0,  # Not available in Keynote sheet
+                        'search_impression_share': 0,  # Not available in Keynote sheet
+                        'cost_per_conversion': 0,  # Not available in Keynote sheet
+                        'cost_micros': 0,  # Not available in Keynote sheet
+                        'phone_calls': 0  # Not available in Keynote sheet
+                    }
+        
+        result = {"campaigns": campaigns, "weeks": weeks}
+        print(f"✅ Keynote comparison data ready: {len(campaigns)} campaigns, {len(weeks)} weeks")
+        return result
+        
+    except Exception as e:
+        print(f"❌ Error in fetch_keynote_comparison_data: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"campaigns": {}, "weeks": []}
