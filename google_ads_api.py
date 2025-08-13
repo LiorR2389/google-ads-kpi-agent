@@ -210,7 +210,7 @@ def fetch_daily_comparison_data():
         
         if df is None or df.empty:
             print("❌ No data loaded from sheet")
-            return {"campaigns": {}, "weeks": []}
+            return {"campaigns": {}, "weeks": [], "conversion_actions": []}
         
         # Process dates and filter for last 4 weeks
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
@@ -221,7 +221,7 @@ def fetch_daily_comparison_data():
         
         if recent_df.empty:
             print("❌ No recent data found in last 4 weeks")
-            return {"campaigns": {}, "weeks": []}
+            return {"campaigns": {}, "weeks": [], "conversion_actions": []}
         
         # Group by week
         recent_df['Week_Start'] = recent_df['Date'].dt.to_period('W').dt.start_time
@@ -251,23 +251,27 @@ def fetch_daily_comparison_data():
                     }
         
         print(f"✅ Daily comparison data ready: {len(campaigns)} campaigns, {len(weeks)} weeks")
-        return {"campaigns": campaigns, "weeks": weeks}
+        
+        return {
+            "campaigns": campaigns, 
+            "weeks": weeks,
+            "conversion_actions": fetch_conversion_action_data()  # Add Luma conversions
+        }
         
     except Exception as e:
         print(f"❌ Error in fetch_daily_comparison_data: {e}")
         import traceback
         traceback.print_exc()
-        return {"campaigns": {}, "weeks": []}
+        return {"campaigns": {}, "weeks": [], "conversion_actions": []}
 
-def fetch_conversion_action_data(sheet_name=None):
-    """Fetch conversion action data from the specified sheet"""
+def fetch_conversion_action_data():
+    """Fetch conversion action data from the Luma sheet (original working version)"""
     try:
-        print("🔄 Loading conversion action data...")
+        print("🚀 Starting conversion action data fetch...")
         
         b64_key = os.getenv("GOOGLE_CREDENTIALS_B64")
         if not b64_key:
-            print("❌ Missing GOOGLE_CREDENTIALS_B64 environment variable")
-            return pd.DataFrame()
+            raise ValueError("Missing GOOGLE_CREDENTIALS_B64 environment variable")
 
         key_data = base64.b64decode(b64_key).decode("utf-8")
         creds_dict = json.loads(key_data)
@@ -276,97 +280,195 @@ def fetch_conversion_action_data(sheet_name=None):
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
 
-        # Use provided sheet_name or default
-        target_sheet_name = sheet_name if sheet_name else CONVERSION_SHEET_NAME
-        print(f"📊 Loading conversion data from sheet: {target_sheet_name}")
+        sheet = client.open_by_key(SHEET_ID).worksheet(CONVERSION_SHEET_NAME)
+        all_data = sheet.get_all_values()
         
-        try:
-            sheet = client.open_by_key(SHEET_ID).worksheet(target_sheet_name)
-            all_data = sheet.get_all_values()
-        except gspread.WorksheetNotFound:
-            print(f"❌ Sheet '{target_sheet_name}' not found")
-            return pd.DataFrame()
-
         print(f"📊 Conversion data rows loaded: {len(all_data)}")
-
-        if len(all_data) < 2:
-            print("⚠️ Not enough conversion data rows")
-            return pd.DataFrame()
-
-        # Find header row - look for Date, Campaign, Conversions keywords
-        header_row_idx = 0
+        
+        if len(all_data) < 3:
+            print("⚠️ Not enough conversion data rows found")
+            return []
+        
+        # Look for the actual data - skip header rows
+        data_start_row = None
         for i, row in enumerate(all_data):
-            row_str = ' '.join(str(cell).lower() for cell in row)
-            if 'date' in row_str and ('campaign' in row_str or 'conversions' in row_str):
-                header_row_idx = i
+            if len(row) > 1 and any(char.isdigit() for char in str(row[0])) and str(row[1]).strip():
+                data_start_row = i
+                print(f"🎯 Found conversion data starting at row {i}: {row}")
                 break
-
-        headers = [col.strip() for col in all_data[header_row_idx]]
-        data_rows = all_data[header_row_idx + 1:]
         
-        print(f"🎯 Found conversion data starting at row {header_row_idx + 1}: {data_rows[0] if data_rows else 'No data'}")
-        print(f"📋 Conversion headers: {headers}")
-
-        # Filter valid rows - must have Date, Campaign Name, and Conversions data
-        valid_rows = []
+        if data_start_row is None:
+            print("⚠️ Could not find conversion data rows")
+            return []
+        
+        # Use the row before data as headers
+        if data_start_row > 0:
+            headers = all_data[data_start_row - 1]
+        else:
+            headers = ['Date', 'Campaign Name', 'Conversions', 'Conversion Action Name']
+        
+        data_rows = all_data[data_start_row:]
+        
+        # Filter out empty rows
+        valid_data_rows = []
         for row in data_rows:
-            if len(row) >= len(headers):
-                row_padded = row[:len(headers)]
-            else:
-                row_padded = row + [''] * (len(headers) - len(row))
-            
-            # Check if row has date, campaign name, and conversion data
-            if (len(row_padded) >= 3 and 
-                row_padded[0].strip() and  # Date
-                row_padded[2].strip() and  # Campaign Name (3rd column)
-                row_padded[3].strip()):    # Conversions (4th column)
-                valid_rows.append(row_padded)
-
-        print(f"📝 Valid conversion data rows after filtering: {len(valid_rows)}")
-
-        if not valid_rows:
-            print("❌ No valid conversion data found")
-            return pd.DataFrame()
-
-        df = pd.DataFrame(valid_rows, columns=headers)
+            if len(row) >= 2 and str(row[0]).strip() and str(row[1]).strip():
+                valid_data_rows.append(row)
+        
+        print(f"📝 Valid conversion data rows after filtering: {len(valid_data_rows)}")
+        
+        if not valid_data_rows:
+            print("⚠️ No valid conversion data rows found after filtering")
+            return []
+        
+        df = pd.DataFrame(valid_data_rows, columns=headers)
+        df.columns = [str(col).strip() for col in df.columns]
+        
         print(f"✅ Created conversion DataFrame with {len(df)} rows")
-
-        # Clean up column names to standard format
-        column_mapping = {
-            'Date': 'Date',
-            'Conversion Action Name': 'Conversion Action',
-            'Campaign Name': 'Campaign Name', 
-            'Conversions': 'Conversions'
-        }
         
-        # Rename columns if they exist
-        for old_name, new_name in column_mapping.items():
-            if old_name in df.columns:
-                df = df.rename(columns={old_name: new_name})
-
-        # Filter for last 7 days if Date column exists
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-            df = df.dropna(subset=['Date'])
-            
-            from datetime import datetime, timedelta
-            week_ago = datetime.now() - timedelta(days=7)
-            recent_conversions = df[df['Date'] >= week_ago]
-            
-            # Clean conversions column
-            if 'Conversions' in recent_conversions.columns:
-                recent_conversions['Conversions'] = recent_conversions['Conversions'].apply(clean_numeric_value)
-            
-            print(f"✅ Processed {len(recent_conversions)} conversion rows from last 7 days")
-            return recent_conversions
+        # Get last 7 days of conversion data
+        df_copy = df.copy()
+        df_copy = df_copy[df_copy.iloc[:, 0].notna() & (df_copy.iloc[:, 0] != '')]
+        df_copy['date_parsed'] = pd.to_datetime(df_copy.iloc[:, 0], errors='coerce')
+        df_copy = df_copy.dropna(subset=['date_parsed'])
         
-        return df
-
+        if len(df_copy) == 0:
+            print("❌ No valid conversion dates found")
+            return []
+        
+        # Get last 7 days
+        from datetime import datetime, timedelta
+        today = datetime.now().date()
+        seven_days_ago = today - timedelta(days=7)
+        
+        recent_data = df_copy[df_copy['date_parsed'].dt.date >= seven_days_ago]
+        
+        print(f"✅ Processed {len(recent_data)} conversion rows from last 7 days")
+        
+        return recent_data.to_dict('records')
+        
     except Exception as e:
-        print(f"❌ Error fetching conversion data: {e}")
+        print(f"❌ Error in fetch_conversion_action_data: {e}")
         import traceback
         traceback.print_exc()
-        return pd.DataFrame()
+        return []
+
+def fetch_keynote_conversion_action_data():
+    """Fetch conversion action data from the Keynote sheet (adapted from working Luma version)"""
+    try:
+        print("🚀 Starting Keynote conversion action data fetch...")
+        
+        b64_key = os.getenv("GOOGLE_CREDENTIALS_B64")
+        if not b64_key:
+            print("❌ Missing GOOGLE_CREDENTIALS_B64 environment variable")
+            return []
+
+        key_data = base64.b64decode(b64_key).decode("utf-8")
+        creds_dict = json.loads(key_data)
+
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+
+        # Try different possible sheet names for Keynote conversions
+        possible_sheets = [
+            "Daily Ad Group Conversion Action Report Keynote",
+            "Google Ads Import",
+            "Conversion Action Report Keynote"
+        ]
+        
+        sheet_data = None
+        used_sheet_name = None
+        
+        for sheet_name in possible_sheets:
+            try:
+                print(f"🔍 Trying sheet: {sheet_name}")
+                sheet = client.open_by_key(SHEET_ID).worksheet(sheet_name)
+                sheet_data = sheet.get_all_values()
+                used_sheet_name = sheet_name
+                print(f"✅ Found sheet: {sheet_name}")
+                break
+            except gspread.WorksheetNotFound:
+                print(f"⚠️ Sheet not found: {sheet_name}")
+                continue
+        
+        if sheet_data is None:
+            print("❌ No Keynote conversion sheet found")
+            return []
+        
+        print(f"📊 Keynote conversion data rows loaded from '{used_sheet_name}': {len(sheet_data)}")
+        
+        if len(sheet_data) < 2:
+            print("⚠️ Not enough Keynote conversion data rows found")
+            return []
+        
+        # Look for the actual data - skip header rows
+        data_start_row = None
+        for i, row in enumerate(sheet_data):
+            if len(row) > 2 and any(char.isdigit() for char in str(row[0])) and str(row[2]).strip():
+                data_start_row = i
+                print(f"🎯 Found Keynote conversion data starting at row {i}: {row}")
+                break
+        
+        if data_start_row is None:
+            print("⚠️ Could not find Keynote conversion data rows")
+            return []
+        
+        # Use the row before data as headers, or create standard headers
+        if data_start_row > 0:
+            headers = sheet_data[data_start_row - 1]
+        else:
+            headers = ['Date', 'Conversion Action Name', 'Campaign Name', 'Conversions']
+        
+        data_rows = sheet_data[data_start_row:]
+        
+        # Filter out empty rows - for Keynote, check Date (col 0), Campaign Name (col 2), and Conversions (col 3)
+        valid_data_rows = []
+        for row in data_rows:
+            if (len(row) >= 4 and 
+                str(row[0]).strip() and  # Date
+                str(row[2]).strip() and  # Campaign Name
+                str(row[3]).strip()):    # Conversions
+                valid_data_rows.append(row)
+        
+        print(f"📝 Valid Keynote conversion data rows after filtering: {len(valid_data_rows)}")
+        
+        if not valid_data_rows:
+            print("⚠️ No valid Keynote conversion data rows found after filtering")
+            return []
+        
+        df = pd.DataFrame(valid_data_rows, columns=headers)
+        df.columns = [str(col).strip() for col in df.columns]
+        
+        print(f"✅ Created Keynote conversion DataFrame with {len(df)} rows")
+        print(f"📋 Keynote conversion columns: {list(df.columns)}")
+        
+        # Get last 7 days of conversion data
+        df_copy = df.copy()
+        df_copy = df_copy[df_copy.iloc[:, 0].notna() & (df_copy.iloc[:, 0] != '')]
+        df_copy['date_parsed'] = pd.to_datetime(df_copy.iloc[:, 0], errors='coerce')
+        df_copy = df_copy.dropna(subset=['date_parsed'])
+        
+        if len(df_copy) == 0:
+            print("❌ No valid Keynote conversion dates found")
+            return []
+        
+        # Get last 7 days
+        from datetime import datetime, timedelta
+        today = datetime.now().date()
+        seven_days_ago = today - timedelta(days=7)
+        
+        recent_data = df_copy[df_copy['date_parsed'].dt.date >= seven_days_ago]
+        
+        print(f"✅ Processed {len(recent_data)} Keynote conversion rows from last 7 days")
+        
+        return recent_data.to_dict('records')
+        
+    except Exception as e:
+        print(f"❌ Error in fetch_keynote_conversion_action_data: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 def fetch_keynote_comparison_data():
     """
@@ -463,43 +565,8 @@ def fetch_keynote_comparison_data():
         return {"campaigns": {}, "weeks": [], "conversions": pd.DataFrame()}
 
 def fetch_keynote_conversion_data():
-    """Fetch conversion data specifically for Keynote campaigns"""
-    try:
-        # The sheet name from your data appears to be "Google Ads Import"
-        # But let's try the standard naming first, then fallback
-        possible_sheet_names = [
-            "Daily Ad Group Conversion Action Report Keynote",
-            "Google Ads Import", 
-            "Conversion Action Report Keynote"
-        ]
-        
-        conversion_df = pd.DataFrame()
-        
-        for sheet_name in possible_sheet_names:
-            print(f"🔍 Trying conversion sheet: {sheet_name}")
-            try:
-                conversion_df = fetch_conversion_action_data(sheet_name=sheet_name)
-                if not conversion_df.empty:
-                    print(f"✅ Found Keynote conversion data in sheet: {sheet_name}")
-                    break
-            except Exception as e:
-                print(f"⚠️ Failed to load from {sheet_name}: {e}")
-                continue
-        
-        if conversion_df.empty:
-            print("❌ No Keynote conversion data available in any sheet")
-            return pd.DataFrame()
-        
-        print(f"✅ Loaded {len(conversion_df)} Keynote conversion rows")
-        print(f"📋 Sample data: {conversion_df.head(2).to_dict('records') if len(conversion_df) > 0 else 'No data'}")
-        
-        return conversion_df
-        
-    except Exception as e:
-        print(f"❌ Error fetching Keynote conversion data: {e}")
-        import traceback
-        traceback.print_exc()
-        return pd.DataFrame()
+    """Fetch conversion data specifically for Keynote campaigns (deprecated - use fetch_keynote_conversion_action_data)"""
+    return fetch_keynote_conversion_action_data()
 
 # Additional utility functions
 def get_date_range_data(df_all, target_date, days_back=7):
