@@ -313,14 +313,21 @@ def generate_daily_comparison_html(daily_data, campaign_type="Luma"):
                             </thead>
                             <tbody>"""
     
-    # Add conversion action rows
+    # Add conversion action rows - FIXED VERSION
     if conversion_actions:
         for i, row in enumerate(conversion_actions):
             bg_color = "#f8f9fa" if i % 2 == 0 else "white"
-            date = row.get(list(row.keys())[0], '') if row else ''
-            campaign = row.get(list(row.keys())[1], '') if len(row.keys()) > 1 else ''
-            conversions = row.get(list(row.keys())[2], '') if len(row.keys()) > 2 else ''
-            action_name = row.get(list(row.keys())[3], '') if len(row.keys()) > 3 else ''
+            
+            # Use proper field names based on the actual data structure
+            # Handle both possible date field names
+            date = row.get('Date', row.get('date_parsed', ''))
+            if hasattr(date, 'strftime'):  # If it's a datetime object
+                date = date.strftime('%Y-%m-%d')
+            
+            # Use exact field names from logs
+            campaign = row.get('Campaign Name', '')
+            conversions = row.get('Conversions', '')
+            action_name = row.get('Conversion Action Name', '')
             
             html += f"""
                                 <tr style="background-color: {bg_color};">
@@ -433,11 +440,12 @@ Please view the HTML version for the complete table format with all metrics.
         text += f"{'Date':<12} {'Campaign':<30} {'Conversions':<12} {'Action':<20}\n"
         text += "-" * 80 + "\n"
         
+        # FIXED conversion data extraction for text version
         for row in conversion_actions:
-            date = str(row.get(list(row.keys())[0], ''))[:10] if row else ''
-            campaign = str(row.get(list(row.keys())[1], ''))[:28] if len(row.keys()) > 1 else ''
-            conversions = str(row.get(list(row.keys())[2], '')) if len(row.keys()) > 2 else ''
-            action_name = str(row.get(list(row.keys())[3], ''))[:18] if len(row.keys()) > 3 else ''
+            date = str(row.get('Date', row.get('date_parsed', '')))[:10]
+            campaign = str(row.get('Campaign Name', ''))[:28]
+            conversions = str(row.get('Conversions', ''))
+            action_name = str(row.get('Conversion Action Name', ''))[:18]
             
             text += f"{date:<12} {campaign:<30} {conversions:<12} {action_name:<20}\n"
     else:
