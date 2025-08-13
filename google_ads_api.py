@@ -370,63 +370,71 @@ def fetch_keynote_conversion_action_data():
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
 
-        # Try different possible sheet names for Keynote conversions
-        possible_sheets = [
-            "Daily Ad Group Conversion Action Report Keynote",
-            "Google Ads Import",
-            "Conversion Action Report Keynote"
-        ]
+        # Try the exact sheet name from your screenshot
+        keynote_conversion_sheet = "Daily Ad Group Conversion Action Report Keynote"
         
-        sheet_data = None
-        used_sheet_name = None
-        
-        for sheet_name in possible_sheets:
-            try:
-                print(f"🔍 Trying sheet: {sheet_name}")
-                sheet = client.open_by_key(SHEET_ID).worksheet(sheet_name)
-                sheet_data = sheet.get_all_values()
-                used_sheet_name = sheet_name
-                print(f"✅ Found sheet: {sheet_name}")
-                break
-            except gspread.WorksheetNotFound:
-                print(f"⚠️ Sheet not found: {sheet_name}")
-                continue
-        
-        if sheet_data is None:
-            print("❌ No Keynote conversion sheet found")
+        try:
+            print(f"🔍 Trying sheet: {keynote_conversion_sheet}")
+            sheet = client.open_by_key(SHEET_ID).worksheet(keynote_conversion_sheet)
+            sheet_data = sheet.get_all_values()
+            print(f"✅ Found sheet: {keynote_conversion_sheet}")
+        except gspread.WorksheetNotFound:
+            print(f"❌ Sheet not found: {keynote_conversion_sheet}")
             return []
         
-        print(f"📊 Keynote conversion data rows loaded from '{used_sheet_name}': {len(sheet_data)}")
+        print(f"📊 Keynote conversion data rows loaded: {len(sheet_data)}")
         
         if len(sheet_data) < 2:
             print("⚠️ Not enough Keynote conversion data rows found")
             return []
         
-        # Look for the actual data - skip header rows
+        # Look for the actual data - try different approaches
         data_start_row = None
+        
+        # First approach: Look for rows with dates (2025-)
         for i, row in enumerate(sheet_data):
-            if len(row) > 2 and any(char.isdigit() for char in str(row[0])) and str(row[2]).strip():
+            if len(row) > 0 and '2025-' in str(row[0]):
                 data_start_row = i
                 print(f"🎯 Found Keynote conversion data starting at row {i}: {row}")
                 break
         
+        # Second approach: Look for rows with digits in first column
+        if data_start_row is None:
+            for i, row in enumerate(sheet_data):
+                if len(row) > 2 and any(char.isdigit() for char in str(row[0])) and str(row[2]).strip():
+                    data_start_row = i
+                    print(f"🎯 Found Keynote conversion data starting at row {i}: {row}")
+                    break
+        
+        # Third approach: Skip first row and look for data
+        if data_start_row is None:
+            for i, row in enumerate(sheet_data[1:], 1):  # Start from row 1
+                if len(row) >= 4 and str(row[0]).strip() and str(row[2]).strip() and str(row[3]).strip():
+                    data_start_row = i
+                    print(f"🎯 Found Keynote conversion data starting at row {i}: {row}")
+                    break
+        
         if data_start_row is None:
             print("⚠️ Could not find Keynote conversion data rows")
+            print(f"📋 Sample rows: {sheet_data[:5]}")
             return []
         
-        # Use the row before data as headers, or create standard headers
+        # Use the row before data as headers, or create standard headers based on your screenshot
         if data_start_row > 0:
             headers = sheet_data[data_start_row - 1]
+            print(f"📋 Headers from sheet: {headers}")
         else:
             headers = ['Date', 'Conversion Action Name', 'Campaign Name', 'Conversions']
+            print(f"📋 Using default headers: {headers}")
         
         data_rows = sheet_data[data_start_row:]
         
-        # Filter out empty rows - for Keynote, check Date (col 0), Campaign Name (col 2), and Conversions (col 3)
+        # Filter out empty rows - based on your screenshot structure
         valid_data_rows = []
         for row in data_rows:
             if (len(row) >= 4 and 
                 str(row[0]).strip() and  # Date
+                str(row[1]).strip() and  # Conversion Action Name  
                 str(row[2]).strip() and  # Campaign Name
                 str(row[3]).strip()):    # Conversions
                 valid_data_rows.append(row)
@@ -435,13 +443,19 @@ def fetch_keynote_conversion_action_data():
         
         if not valid_data_rows:
             print("⚠️ No valid Keynote conversion data rows found after filtering")
+            print(f"📋 Sample data rows: {data_rows[:3]}")
             return []
         
-        df = pd.DataFrame(valid_data_rows, columns=headers)
+        # Ensure headers match data structure
+        if len(headers) < 4:
+            headers = ['Date', 'Conversion Action Name', 'Campaign Name', 'Conversions']
+        
+        df = pd.DataFrame(valid_data_rows, columns=headers[:len(valid_data_rows[0])] if valid_data_rows else headers)
         df.columns = [str(col).strip() for col in df.columns]
         
         print(f"✅ Created Keynote conversion DataFrame with {len(df)} rows")
         print(f"📋 Keynote conversion columns: {list(df.columns)}")
+        print(f"📊 Sample Keynote conversion data: {df.head(3).to_dict('records') if len(df) > 0 else 'No data'}")
         
         # Get last 7 days of conversion data
         df_copy = df.copy()
@@ -451,6 +465,7 @@ def fetch_keynote_conversion_action_data():
         
         if len(df_copy) == 0:
             print("❌ No valid Keynote conversion dates found")
+            print(f"📅 Raw date samples: {df.iloc[:3, 0].tolist() if len(df) > 0 else 'No data'}")
             return []
         
         # Get last 7 days
@@ -461,6 +476,7 @@ def fetch_keynote_conversion_action_data():
         recent_data = df_copy[df_copy['date_parsed'].dt.date >= seven_days_ago]
         
         print(f"✅ Processed {len(recent_data)} Keynote conversion rows from last 7 days")
+        print(f"📊 Recent Keynote conversions: {recent_data[['date_parsed', df_copy.columns[2], df_copy.columns[3]]].head().to_dict('records') if len(recent_data) > 0 else 'No recent data'}")
         
         return recent_data.to_dict('records')
         
