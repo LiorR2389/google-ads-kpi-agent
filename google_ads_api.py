@@ -823,4 +823,33 @@ def fetch_sheet_data():
         traceback.print_exc()
         raise
 # At the end of google_ads_api.py
-fetch_keynote_comparison_data = fetch_daily_comparison_data
+# Remove this line:
+# fetch_keynote_comparison_data = fetch_daily_comparison_data
+
+# Add this proper function instead:
+def fetch_keynote_comparison_data():
+    """
+    Fetch Keynote campaign data for daily comparison from the Keynote sheet tab
+    """
+    try:
+        print("🚀 Starting Keynote daily comparison data fetch...")
+        
+        # Use the Keynote-specific sheet name
+        keynote_sheet_name = "Daily Ad Group Performance Report Keynote"
+        
+        # Load data from the Keynote sheet
+        df = load_campaign_data(sheet_name=keynote_sheet_name)
+        
+        if df is None or df.empty:
+            print(f"❌ No data found in {keynote_sheet_name} sheet")
+            return {"campaigns": {}, "weeks": []}
+        
+        print(f"✅ Loaded {len(df)} rows from Keynote sheet")
+        
+        # Process the data same way but from Keynote sheet
+        # ... rest of the processing logic same as fetch_daily_comparison_data
+        # but using the Keynote sheet data
+        
+    except Exception as e:
+        print(f"❌ Error in fetch_keynote_comparison_data: {e}")
+        return {"campaigns": {}, "weeks": []}
