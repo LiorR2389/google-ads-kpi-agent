@@ -282,7 +282,11 @@ def fetch_daily_comparison_data():
         traceback.print_exc()
         return {"campaigns": {}, "weeks": [], "conversion_actions": []}
 
-def fetch_conversion_action_data():
+# Need to modify fetch_conversion_action_data to support Keynote sheet
+def fetch_keynote_conversion_data():
+    keynote_conversion_sheet = "Daily Ad Group Conversion Action Report Keynote"
+    return fetch_conversion_action_data(sheet_name=keynote_conversion_sheet)
+    
     """Fetch conversion action data from the second sheet"""
     try:
         print("🚀 Starting conversion action data fetch...")
