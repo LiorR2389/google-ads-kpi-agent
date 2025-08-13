@@ -84,7 +84,7 @@ def send_keynote_comparison_email(keynote_data):
             return
         
         # DEBUG: Check Keynote conversion data
-        conversion_actions = keynote_data.get('conversions', [])
+        conversion_actions = keynote_data.get('conversions', [])  # FIXED: Use 'conversions' key instead of 'conversion_actions'
         print(f"🔍 DEBUG KEYNOTE: Conversion actions count: {len(conversion_actions)}")
         if conversion_actions:
             print(f"🔍 DEBUG KEYNOTE: First conversion keys: {list(conversion_actions[0].keys())}")
@@ -94,11 +94,14 @@ def send_keynote_comparison_email(keynote_data):
             print(f"🔍 DEBUG KEYNOTE: No conversion actions found in data")
             print(f"🔍 DEBUG KEYNOTE: Available keynote_data keys: {list(keynote_data.keys())}")
         
-        # Create HTML email
-        html_content = generate_daily_comparison_html(keynote_data, "Keynote")
+        # Create HTML email - explicitly pass conversion data with correct key
+        keynote_data_with_conversions = keynote_data.copy()
+        keynote_data_with_conversions['conversion_actions'] = conversion_actions  # FIXED: Ensure HTML function gets data under expected key
+        html_content = generate_daily_comparison_html(keynote_data_with_conversions, "Keynote")
         
         # Create plain text version
-        plain_text = generate_daily_comparison_text(keynote_data, "Keynote")
+        keynote_data_with_conversions['conversion_actions'] = conversion_actions  # Also fix for text version
+        plain_text = generate_daily_comparison_text(keynote_data_with_conversions, "Keynote")
         
         # Create email message
         msg = MIMEMultipart('alternative')
@@ -121,6 +124,8 @@ def send_keynote_comparison_email(keynote_data):
         print(f"❌ Keynote email preparation failed: {e}")
         raise
 
+
+    
 def _send_email(msg, email_user, email_password):
     """Helper function to send email with different SMTP configurations"""
     # Try different SMTP configurations
