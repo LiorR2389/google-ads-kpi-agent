@@ -1,9 +1,9 @@
-from google_ads_api import fetch_daily_comparison_data
+﻿from google_ads_api import fetch_daily_comparison_data, fetch_keynote_comparison_data
 from send_report_email import send_daily_comparison_email, send_keynote_comparison_email
 import time
 
 def send_all_daily_reports():
-    """Send both Luma and Keynote daily comparison reports"""
+    "Send both Luma and Keynote daily comparison reports"
     print("🚀 Starting daily reports generation...")
     
     # Generate and send Luma report
