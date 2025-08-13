@@ -84,7 +84,7 @@ def send_keynote_comparison_email(keynote_data):
             return
         
         # DEBUG: Check Keynote conversion data
-        conversion_actions = keynote_data.get('conversion_actions', [])
+        conversion_actions = keynote_data.get('conversions', [])
         print(f"🔍 DEBUG KEYNOTE: Conversion actions count: {len(conversion_actions)}")
         if conversion_actions:
             print(f"🔍 DEBUG KEYNOTE: First conversion keys: {list(conversion_actions[0].keys())}")
