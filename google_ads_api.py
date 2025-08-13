@@ -7,6 +7,7 @@ import base64
 import json
 from oauth2client.service_account import ServiceAccountCredentials
 
+
 DATA_DIR = "data"
 SHEET_ID = "1rBjY6_AeDIG-1UEp3JvA44CKLAqn3JAGFttixkcRaKg"
 SHEET_NAME = "Daily Ad Group Performance Report"
@@ -821,3 +822,5 @@ def fetch_sheet_data():
         import traceback
         traceback.print_exc()
         raise
+# At the end of google_ads_api.py
+fetch_keynote_comparison_data = fetch_daily_comparison_data
